@@ -243,10 +243,44 @@
   var socket = io();
   var latestData = null;
   var isRolling = false;
+  var isConnected = false;
+  // The room+name we should be in. Re-sent on every 'connect' (including
+  // reconnects after a dropped connection), so a lost join/roll never
+  // leaves the player stuck with an unresponsive button.
+  var desired = null;
+  var pendingCreateName = null;
 
   function setErr(msg) { entryErr.textContent = msg || ''; }
 
+  function setConnUI() {
+    var busy = !isConnected;
+    createBtn.disabled = busy || !!pendingCreateName;
+    joinBtn.disabled = busy;
+    if (!isConnected) {
+      statusLine.className = 'status-line';
+      statusLine.textContent = '接続が切れました。再接続しています…';
+    }
+  }
+
+  socket.on('connect', function () {
+    isConnected = true;
+    setConnUI();
+    if (desired) {
+      socket.emit('join_room', { code: desired.code, name: desired.name, pid: playerId });
+    } else if (pendingCreateName) {
+      socket.emit('create_room', { name: pendingCreateName, pid: playerId });
+    }
+    if (!latestData) render();
+  });
+
+  socket.on('disconnect', function () {
+    isConnected = false;
+    setConnUI();
+  });
+
   socket.on('joined', function (payload) {
+    pendingCreateName = null;
+    desired = { code: payload.code, name: nameInput.value.trim() || localStorage.getItem('dice_name') || '' };
     localStorage.setItem('dice_room_code', payload.code);
     roomCodeDisplay.textContent = payload.code;
     entrySection.hidden = true;
@@ -255,11 +289,30 @@
     joinBtn.disabled = false;
   });
 
+  function backToEntry(message) {
+    desired = null;
+    pendingCreateName = null;
+    latestData = null;
+    localStorage.removeItem('dice_room_code');
+    roomSection.hidden = true;
+    entrySection.hidden = false;
+    createBtn.disabled = false;
+    joinBtn.disabled = false;
+    setErr(message);
+  }
+
   socket.on('join_error', function (e) {
     createBtn.disabled = false;
     joinBtn.disabled = false;
-    if (e.code === 'not_found') setErr('その合言葉の部屋は見つかりませんでした。');
-    else setErr('通信に失敗しました。');
+    pendingCreateName = null;
+    if (e.code === 'not_found') {
+      // Whether this was a manual join or a silent auto-rejoin after a
+      // reconnect, the room is gone — always return to a working entry
+      // screen instead of leaving a stale/frozen room view on screen.
+      backToEntry('前回の部屋は見つかりませんでした。もう一度部屋を作るか、合言葉を入力してください。');
+    } else {
+      setErr('通信に失敗しました。');
+    }
   });
 
   socket.on('state', function (data) {
@@ -268,7 +321,8 @@
   });
 
   socket.on('connect_error', function () {
-    setErr('サーバーに接続できませんでした。');
+    isConnected = false;
+    setConnUI();
   });
 
   function render() {
@@ -344,6 +398,8 @@
     setErr('');
     localStorage.setItem('dice_name', name);
     createBtn.disabled = true;
+    desired = null;
+    pendingCreateName = name;
     socket.emit('create_room', { name: name, pid: playerId });
   });
 
@@ -355,11 +411,14 @@
     setErr('');
     localStorage.setItem('dice_name', name);
     joinBtn.disabled = true;
+    pendingCreateName = null;
+    desired = { code: code, name: name };
     socket.emit('join_room', { code: code, name: name, pid: playerId });
   });
 
   rollBtn.addEventListener('click', function () {
     if (!latestData || isRolling) return;
+    if (!isConnected) { statusLine.textContent = '接続が切れています。再接続を待ってからもう一度お試しください。'; return; }
     var round = latestData.round || 1;
     var activeIds = latestData.activeIds || null;
     if (activeIds && activeIds.indexOf(playerId) === -1) return;
@@ -421,6 +480,7 @@
   });
 
   nextRoundBtn.addEventListener('click', function () {
+    if (!isConnected) { statusLine.textContent = '接続が切れています。再接続を待ってからもう一度お試しください。'; return; }
     socket.emit('next_round');
   });
 
@@ -435,7 +495,14 @@
   });
 
   var lastCode = localStorage.getItem('dice_room_code');
+  var lastName = localStorage.getItem('dice_name');
   if (lastCode) codeInput.value = lastCode;
+  // Resume the previous room automatically (e.g. after a page reload) —
+  // the 'connect' handler above sends the actual join_room once the
+  // socket is up, and falls back to the entry screen if that room is gone.
+  if (lastCode && lastName) {
+    desired = { code: lastCode, name: lastName };
+  }
 })();
 </script>
 </body>
