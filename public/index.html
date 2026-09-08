@@ -71,6 +71,12 @@
   .room-code-row { display: flex; align-items: center; justify-content: center; gap: 0.6rem; }
   .room-code { font-family: "Zen Maru Gothic", sans-serif; font-size: 28px; letter-spacing: 0.28em; font-variant-numeric: tabular-nums; }
   .copy-btn { background: rgba(255,255,255,0.16); color: var(--felt-ink); font-size: 12px; padding: 0.3rem 0.6rem; }
+  .leave-link {
+    display: block; margin: 0.6rem auto 0; background: none; border: none;
+    font-size: 12px; font-weight: 400; color: var(--felt-ink); opacity: 0.7;
+    text-decoration: underline; padding: 2px 4px; cursor: pointer;
+  }
+  .leave-link:hover { opacity: 1; }
 
   .dice-stage { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 0.25rem 0 0.5rem; }
   .big-dice-row { display: flex; gap: 10px; }
@@ -156,6 +162,7 @@
         <span class="room-code" id="room-code-display">----</span>
         <button class="copy-btn" id="copy-btn" type="button">コピー</button>
       </div>
+      <button class="leave-link" id="leave-btn" type="button">退出する</button>
     </div>
     <div class="body">
       <div class="dice-stage" id="dice-stage" hidden>
@@ -225,6 +232,7 @@
   var roomSection = document.getElementById('room');
   var roomCodeDisplay = document.getElementById('room-code-display');
   var copyBtn = document.getElementById('copy-btn');
+  var leaveBtn = document.getElementById('leave-btn');
   var playersList = document.getElementById('players-list');
   var statusLine = document.getElementById('status-line');
   var rollBtn = document.getElementById('roll-btn');
@@ -487,6 +495,11 @@
   nextRoundBtn.addEventListener('click', function () {
     if (!isConnected) { statusLine.textContent = '接続が切れています。再接続を待ってからもう一度お試しください。'; return; }
     socket.emit('next_round');
+  });
+
+  leaveBtn.addEventListener('click', function () {
+    if (isConnected) socket.emit('leave_room');
+    backToEntry('');
   });
 
   copyBtn.addEventListener('click', function () {

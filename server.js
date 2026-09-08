@@ -42,6 +42,19 @@ function broadcast(code) {
   if (room) io.to(code).emit('state', publicState(room));
 }
 
+function removePlayer(code, pid) {
+  const room = rooms.get(code);
+  if (!room) return;
+  room.players = room.players.filter((p) => p.id !== pid);
+  if (room.activeIds) room.activeIds = room.activeIds.filter((id) => id !== pid);
+  room.updatedAt = Date.now();
+  if (room.players.length === 0) {
+    rooms.delete(code);
+  } else {
+    broadcast(code);
+  }
+}
+
 function sweepStaleRooms() {
   const now = Date.now();
   for (const [code, room] of rooms) {
@@ -120,6 +133,14 @@ io.on('connection', (socket) => {
     room.activeIds = winners.length > 1 ? winners.map((p) => p.id) : null;
     room.updatedAt = Date.now();
     broadcast(joinedCode);
+  });
+
+  socket.on('leave_room', () => {
+    if (!joinedCode || !playerId) return;
+    removePlayer(joinedCode, playerId);
+    socket.leave(joinedCode);
+    joinedCode = null;
+    playerId = null;
   });
 
   socket.on('disconnect', () => {});
