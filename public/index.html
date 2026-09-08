@@ -260,6 +260,8 @@
 
   function setErr(msg) { entryErr.textContent = msg || ''; }
 
+  var disconnectDebounce = null;
+
   function setConnUI() {
     var busy = !isConnected;
     createBtn.disabled = busy || !!pendingCreateName;
@@ -268,6 +270,7 @@
   }
 
   socket.on('connect', function () {
+    if (disconnectDebounce) { clearTimeout(disconnectDebounce); disconnectDebounce = null; }
     isConnected = true;
     setConnUI();
     if (desired) {
@@ -279,7 +282,15 @@
 
   socket.on('disconnect', function () {
     isConnected = false;
-    setConnUI();
+    // A reconnect during a Render cold start (or any brief network blip)
+    // can flap connect/disconnect a few times in quick succession. Wait a
+    // moment before showing the "disconnected" UI so a fast recovery never
+    // reads as the buttons flickering.
+    if (disconnectDebounce) clearTimeout(disconnectDebounce);
+    disconnectDebounce = setTimeout(function () {
+      disconnectDebounce = null;
+      setConnUI();
+    }, 400);
   });
 
   socket.on('joined', function (payload) {
@@ -326,7 +337,11 @@
 
   socket.on('connect_error', function () {
     isConnected = false;
-    setConnUI();
+    if (disconnectDebounce) clearTimeout(disconnectDebounce);
+    disconnectDebounce = setTimeout(function () {
+      disconnectDebounce = null;
+      setConnUI();
+    }, 400);
   });
 
   function render() {
