@@ -256,10 +256,7 @@
     var busy = !isConnected;
     createBtn.disabled = busy || !!pendingCreateName;
     joinBtn.disabled = busy;
-    if (!isConnected) {
-      statusLine.className = 'status-line';
-      statusLine.textContent = '接続が切れました。再接続しています…';
-    }
+    render();
   }
 
   socket.on('connect', function () {
@@ -270,7 +267,6 @@
     } else if (pendingCreateName) {
       socket.emit('create_room', { name: pendingCreateName, pid: playerId });
     }
-    if (!latestData) render();
   });
 
   socket.on('disconnect', function () {
@@ -326,6 +322,15 @@
   });
 
   function render() {
+    if (!isConnected) {
+      if (latestData) {
+        statusLine.className = 'status-line';
+        statusLine.textContent = '接続が切れました。再接続しています…';
+        rollBtn.hidden = true;
+        nextRoundBtn.hidden = true;
+      }
+      return;
+    }
     if (!latestData) return;
     var round = latestData.round || 1;
     var players = latestData.players || [];
