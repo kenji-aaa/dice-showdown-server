@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ダイス対決</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4efe0;
+    --surface: #ffffff;
+    --surface-2: #eae1c8;
+    --ink: #23291f;
+    --ink-secondary: #5a6653;
+    --felt: #2d6a4f;
+    --felt-ink: #eef7f0;
+    --accent: #b3121a;
+    --accent-ink: #fbeceb;
+    --border: rgba(35, 41, 31, 0.14);
+    --pip: #23291f;
+    --shadow: 0 1px 2px rgba(35, 41, 31, 0.08), 0 8px 24px rgba(35, 41, 31, 0.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11221a;
+      --surface: #1a3327;
+      --surface-2: #1f3d2f;
+      --ink: #eef2e9;
+      --ink-secondary: #9fb3a2;
+      --felt: #4e9575;
+      --felt-ink: #0d1f17;
+      --accent: #e5636a;
+      --accent-ink: #3a0f11;
+      --border: rgba(238, 242, 233, 0.14);
+      --pip: #eef2e9;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: "Noto Sans JP", "Hiragino Sans", sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 460px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-family: "Zen Maru Gothic", "Noto Sans JP", sans-serif; font-weight: 700; margin: 0; font-size: 26px; letter-spacing: 0.02em; }
+  .card { background: var(--surface); border: 0.5px solid var(--border); border-radius: 20px; box-shadow: var(--shadow); overflow: hidden; }
+  .header { background: var(--felt); color: var(--felt-ink); padding: 1.5rem 1.5rem 1.25rem; text-align: center; }
+  .header p { margin: 0.35rem 0 0; font-size: 13px; opacity: 0.85; }
+  .body { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.1rem; }
+  label { font-size: 13px; color: var(--ink-secondary); display: block; margin-bottom: 0.4rem; }
+  input[type="text"] {
+    width: 100%; font-family: inherit; font-size: 16px; padding: 0.7rem 0.85rem;
+    border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--ink);
+  }
+  input[type="text"]:focus { outline: 2px solid var(--felt); outline-offset: 1px; }
+  input.code-input { text-transform: uppercase; letter-spacing: 0.3em; text-align: center; font-size: 20px; font-weight: 700; }
+  button {
+    font-family: inherit; font-weight: 700; font-size: 15px; border-radius: 10px;
+    border: none; padding: 0.75rem 1rem; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-ink); }
+  button.primary:active { transform: scale(0.98); }
+  button.primary:disabled { opacity: 0.45; cursor: default; transform: none; }
+  button.ghost { background: transparent; color: var(--ink-secondary); border: 1px solid var(--border); }
+  .divider { display: flex; align-items: center; gap: 0.75rem; color: var(--ink-secondary); font-size: 12px; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .err { color: var(--accent); font-size: 13px; min-height: 1em; }
+  .room-code-row { display: flex; align-items: center; justify-content: center; gap: 0.6rem; }
+  .room-code { font-family: "Zen Maru Gothic", sans-serif; font-size: 28px; letter-spacing: 0.28em; font-variant-numeric: tabular-nums; }
+  .copy-btn { background: rgba(255,255,255,0.16); color: var(--felt-ink); font-size: 12px; padding: 0.3rem 0.6rem; }
+
+  .dice-stage { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 0.25rem 0 0.5rem; }
+  .big-dice-row { display: flex; gap: 10px; }
+  .big-die {
+    width: 66px; height: 66px; border-radius: 14px; background: var(--surface);
+    border: 2px solid var(--border); display: flex; align-items: center; justify-content: center;
+  }
+  .big-die-face { width: 68%; height: 68%; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+  .big-die-face .pip { width: 10px; height: 10px; }
+  .big-die.spinning { animation: tumble 0.28s ease-in-out infinite; }
+  .big-die.landed { animation: land 0.4s cubic-bezier(.34,1.56,.64,1); border-color: var(--accent); }
+  @keyframes tumble {
+    0% { transform: rotate(0deg) scale(1); }
+    25% { transform: rotate(-16deg) scale(1.05); }
+    50% { transform: rotate(13deg) scale(0.95); }
+    75% { transform: rotate(-9deg) scale(1.03); }
+    100% { transform: rotate(0deg) scale(1); }
+  }
+  @keyframes land {
+    0% { transform: scale(1.4) rotate(0deg); }
+    55% { transform: scale(0.9) rotate(0deg); }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+  .dice-sum { font-family: "Zen Maru Gothic", sans-serif; font-size: 15px; color: var(--ink-secondary); opacity: 0; transition: opacity 0.25s ease; }
+  .dice-sum.show { opacity: 1; }
+  .dice-sum .val { font-size: 22px; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+  .players { display: flex; flex-direction: column; gap: 0.6rem; max-height: 336px; overflow-y: auto; padding-right: 2px; scrollbar-width: thin; }
+  .player-row { display: flex; align-items: center; gap: 0.7rem; padding: 0.6rem 0.75rem; border-radius: 12px; background: var(--surface-2); border: 1px solid transparent; }
+  .player-row.me { border-color: var(--felt); }
+  .player-row.winner { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); }
+  .player-row.spectator { opacity: 0.5; }
+  .dice-trio { display: flex; gap: 4px; flex-shrink: 0; }
+  .player-name { flex: 1; font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .player-name .you-tag { font-size: 11px; color: var(--ink-secondary); font-weight: 400; margin-left: 0.35em; }
+  .player-name .out-tag { font-size: 11px; color: var(--ink-secondary); font-weight: 400; margin-left: 0.35em; }
+  .sum-badge { font-family: "Zen Maru Gothic", sans-serif; font-size: 18px; font-weight: 700; min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; }
+  .die { width: 26px; height: 26px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); padding: 4px; flex-shrink: 0; }
+  .die.empty { opacity: 0.35; }
+  .die:not(.empty) { animation: die-pop 0.28s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes die-pop { 0% { transform: scale(0.55); } 100% { transform: scale(1); } }
+  .die .pip { width: 3.5px; height: 3.5px; }
+  .pip { border-radius: 50%; margin: auto; background: transparent; }
+  .pip.on { background: var(--pip); }
+  .status-line { text-align: center; font-size: 14px; color: var(--ink-secondary); min-height: 1.4em; }
+  .status-line.winner-text { color: var(--accent); font-weight: 700; font-size: 16px; }
+  .actions { display: flex; gap: 0.6rem; }
+  .actions button { flex: 1; }
+  .footnote { text-align: center; font-size: 12px; color: var(--ink-secondary); }
+  [hidden] { display: none !important; }
+  @media (prefers-reduced-motion: reduce) {
+    .big-die.spinning, .big-die.landed, .die:not(.empty) { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section id="entry" class="card">
+    <div class="header">
+      <h1>🎲 ダイス対決</h1>
+      <p>3つの合計が一番大きい人の勝ち</p>
+    </div>
+    <div class="body">
+      <div>
+        <label for="name-input">あなたの名前</label>
+        <input type="text" id="name-input" maxlength="16" placeholder="例）けんじ" autocomplete="off">
+      </div>
+      <button class="primary" id="create-btn">部屋を作る</button>
+      <div class="divider">または</div>
+      <div>
+        <label for="code-input">合言葉（部屋コード）</label>
+        <input type="text" id="code-input" class="code-input" maxlength="4" placeholder="ABCD" autocomplete="off">
+      </div>
+      <button class="ghost" id="join-btn">この部屋に入る</button>
+      <div class="err" id="entry-err"></div>
+    </div>
+  </section>
+
+  <section id="room" class="card" hidden>
+    <div class="header">
+      <p style="margin:0 0 0.4rem;">合言葉を友達に伝えよう</p>
+      <div class="room-code-row">
+        <span class="room-code" id="room-code-display">----</span>
+        <button class="copy-btn" id="copy-btn" type="button">コピー</button>
+      </div>
+    </div>
+    <div class="body">
+      <div class="dice-stage" id="dice-stage" hidden>
+        <div class="big-dice-row">
+          <div class="big-die" id="big-die-0"><div class="big-die-face" id="big-die-face-0"></div></div>
+          <div class="big-die" id="big-die-1"><div class="big-die-face" id="big-die-face-1"></div></div>
+          <div class="big-die" id="big-die-2"><div class="big-die-face" id="big-die-face-2"></div></div>
+        </div>
+        <div class="dice-sum" id="dice-sum">合計 <span class="val" id="dice-sum-val">0</span></div>
+      </div>
+      <div class="players" id="players-list"></div>
+      <div class="status-line" id="status-line"></div>
+      <div class="actions">
+        <button class="primary" id="roll-btn">サイコロを振る</button>
+        <button class="ghost" id="next-round-btn" hidden>もう一度</button>
+      </div>
+      <div class="footnote">このブラウザがあなたの席です。他の人は同じ合言葉で参加してください。</div>
+    </div>
+  </section>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function () {
+  var PIP_MAP = {
+    1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9],
+    5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9]
+  };
+
+  function pipsHTML(value) {
+    var on = value ? PIP_MAP[value] : [];
+    var cells = '';
+    for (var i = 1; i <= 9; i++) {
+      cells += '<span class="pip' + (on.indexOf(i) !== -1 ? ' on' : '') + '"></span>';
+    }
+    return cells;
+  }
+  function dieFaceHTML(value) {
+    return '<div class="die' + (value ? '' : ' empty') + '">' + pipsHTML(value) + '</div>';
+  }
+  function trioHTML(values) {
+    values = values || [null, null, null];
+    return '<div class="dice-trio">' + values.map(dieFaceHTML).join('') + '</div>';
+  }
+  function randomFace() { return 1 + Math.floor(Math.random() * 6); }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function getPlayerId() {
+    var id = localStorage.getItem('dice_player_id');
+    if (!id) {
+      id = 'p_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      localStorage.setItem('dice_player_id', id);
+    }
+    return id;
+  }
+
+  var playerId = getPlayerId();
+  var nameInput = document.getElementById('name-input');
+  var codeInput = document.getElementById('code-input');
+  var createBtn = document.getElementById('create-btn');
+  var joinBtn = document.getElementById('join-btn');
+  var entryErr = document.getElementById('entry-err');
+  var entrySection = document.getElementById('entry');
+  var roomSection = document.getElementById('room');
+  var roomCodeDisplay = document.getElementById('room-code-display');
+  var copyBtn = document.getElementById('copy-btn');
+  var playersList = document.getElementById('players-list');
+  var statusLine = document.getElementById('status-line');
+  var rollBtn = document.getElementById('roll-btn');
+  var nextRoundBtn = document.getElementById('next-round-btn');
+  var diceStage = document.getElementById('dice-stage');
+  var diceSum = document.getElementById('dice-sum');
+  var diceSumVal = document.getElementById('dice-sum-val');
+  var bigDieEls = [
+    { die: document.getElementById('big-die-0'), face: document.getElementById('big-die-face-0') },
+    { die: document.getElementById('big-die-1'), face: document.getElementById('big-die-face-1') },
+    { die: document.getElementById('big-die-2'), face: document.getElementById('big-die-face-2') }
+  ];
+
+  nameInput.value = localStorage.getItem('dice_name') || '';
+
+  var socket = io();
+  var latestData = null;
+  var isRolling = false;
+
+  function setErr(msg) { entryErr.textContent = msg || ''; }
+
+  socket.on('joined', function (payload) {
+    localStorage.setItem('dice_room_code', payload.code);
+    roomCodeDisplay.textContent = payload.code;
+    entrySection.hidden = true;
+    roomSection.hidden = false;
+    createBtn.disabled = false;
+    joinBtn.disabled = false;
+  });
+
+  socket.on('join_error', function (e) {
+    createBtn.disabled = false;
+    joinBtn.disabled = false;
+    if (e.code === 'not_found') setErr('その合言葉の部屋は見つかりませんでした。');
+    else setErr('通信に失敗しました。');
+  });
+
+  socket.on('state', function (data) {
+    latestData = data;
+    render();
+  });
+
+  socket.on('connect_error', function () {
+    setErr('サーバーに接続できませんでした。');
+  });
+
+  function render() {
+    if (!latestData) return;
+    var round = latestData.round || 1;
+    var players = latestData.players || [];
+    var rolls = latestData.rolls || {};
+    var activeIds = latestData.activeIds || null;
+
+    var rows = players.map(function (p) {
+      var r = rolls[p.id];
+      var hasCurrent = r && r.round === round;
+      var isActive = !activeIds || activeIds.indexOf(p.id) !== -1;
+      return {
+        pid: p.id, name: p.name,
+        values: hasCurrent ? r.values : null,
+        sum: hasCurrent ? r.sum : null,
+        active: isActive
+      };
+    });
+
+    var activeRows = rows.filter(function (r) { return r.active; });
+    var allRolled = activeRows.length > 0 && activeRows.every(function (r) { return r.sum !== null; });
+    var maxSum = allRolled ? Math.max.apply(null, activeRows.map(function (r) { return r.sum; })) : null;
+    var winners = allRolled ? activeRows.filter(function (r) { return r.sum === maxSum; }) : [];
+    var isTie = winners.length > 1;
+
+    playersList.innerHTML = rows.map(function (r) {
+      var isMe = r.pid === playerId;
+      var isWinner = allRolled && !isTie && r.active && r.sum === maxSum;
+      var cls = 'player-row' + (isMe ? ' me' : '') + (isWinner ? ' winner' : '') + (!r.active ? ' spectator' : '');
+      var tag = isMe ? '<span class="you-tag">あなた</span>' : (!r.active ? '<span class="out-tag">見学中</span>' : '');
+      return '<div class="' + cls + '">' +
+        trioHTML(r.values) +
+        '<div class="player-name">' + escapeHtml(r.name) + tag + '</div>' +
+        '<div class="sum-badge">' + (r.sum !== null ? r.sum : '–') + '</div>' +
+        '</div>';
+    }).join('');
+
+    if (activeRows.length === 0) {
+      statusLine.className = 'status-line';
+      statusLine.textContent = '参加者を待っています…';
+    } else if (!allRolled) {
+      var remaining = activeRows.filter(function (r) { return r.sum === null; }).length;
+      statusLine.className = 'status-line';
+      statusLine.textContent = (activeIds ? '同点対決！あと' : 'あと') + remaining + '人がサイコロを振るのを待っています…';
+    } else if (isTie) {
+      statusLine.className = 'status-line winner-text';
+      statusLine.textContent = '同点！（' + winners.map(function (w) { return w.name; }).join('・') + '）1位同士で振り直し';
+    } else {
+      statusLine.className = 'status-line winner-text';
+      statusLine.textContent = winners[0].name + ' の勝ち！（合計 ' + maxSum + '）';
+    }
+
+    if (!isRolling) {
+      var myRow = rows.filter(function (r) { return r.pid === playerId; })[0];
+      if (myRow && !myRow.active) {
+        rollBtn.hidden = true;
+      } else {
+        rollBtn.hidden = false;
+        var myRolledThisRound = myRow && myRow.sum !== null;
+        rollBtn.disabled = !!myRolledThisRound;
+        rollBtn.textContent = myRolledThisRound ? '振った！次を待とう' : 'サイコロを振る';
+      }
+    }
+    nextRoundBtn.hidden = !allRolled;
+    nextRoundBtn.textContent = isTie ? '同点者で振り直す' : '新しいゲーム';
+  }
+
+  createBtn.addEventListener('click', function () {
+    var name = nameInput.value.trim();
+    if (!name) { setErr('名前を入力してください。'); return; }
+    setErr('');
+    localStorage.setItem('dice_name', name);
+    createBtn.disabled = true;
+    socket.emit('create_room', { name: name, pid: playerId });
+  });
+
+  joinBtn.addEventListener('click', function () {
+    var name = nameInput.value.trim();
+    var code = codeInput.value.trim().toUpperCase();
+    if (!name) { setErr('名前を入力してください。'); return; }
+    if (code.length !== 4) { setErr('4文字の合言葉を入力してください。'); return; }
+    setErr('');
+    localStorage.setItem('dice_name', name);
+    joinBtn.disabled = true;
+    socket.emit('join_room', { code: code, name: name, pid: playerId });
+  });
+
+  rollBtn.addEventListener('click', function () {
+    if (!latestData || isRolling) return;
+    var round = latestData.round || 1;
+    var activeIds = latestData.activeIds || null;
+    if (activeIds && activeIds.indexOf(playerId) === -1) return;
+    var myRoll = latestData.rolls && latestData.rolls[playerId];
+    if (myRoll && myRoll.round === round) return;
+
+    isRolling = true;
+    rollBtn.disabled = true;
+    rollBtn.textContent = '振っています…';
+    diceStage.hidden = false;
+    diceSum.classList.remove('show');
+
+    bigDieEls.forEach(function (el) {
+      el.die.className = 'big-die spinning';
+      el.face.innerHTML = pipsHTML(randomFace());
+    });
+
+    var startedAt = Date.now();
+    var flickerTimer = setInterval(function () {
+      bigDieEls.forEach(function (el) {
+        el.face.innerHTML = pipsHTML(randomFace());
+      });
+    }, 80);
+
+    socket.emit('roll');
+
+    var checkTimer = setInterval(function () {
+      var elapsed = Date.now() - startedAt;
+      var mine = latestData && latestData.rolls && latestData.rolls[playerId];
+      var haveResult = mine && mine.round === round;
+
+      if (haveResult && elapsed >= 900) {
+        clearInterval(flickerTimer);
+        clearInterval(checkTimer);
+        settle(mine.values, mine.sum);
+      } else if (elapsed > 6000) {
+        clearInterval(flickerTimer);
+        clearInterval(checkTimer);
+        isRolling = false;
+        diceStage.hidden = true;
+        statusLine.textContent = '通信がタイムアウトしました。もう一度お試しください。';
+        render();
+      }
+    }, 100);
+
+    function settle(values, sum) {
+      bigDieEls.forEach(function (el, idx) {
+        el.face.innerHTML = pipsHTML(values[idx]);
+        el.die.className = 'big-die landed';
+      });
+      diceSumVal.textContent = sum;
+      diceSum.classList.add('show');
+      setTimeout(function () {
+        diceStage.hidden = true;
+        isRolling = false;
+        render();
+      }, 800);
+    }
+  });
+
+  nextRoundBtn.addEventListener('click', function () {
+    socket.emit('next_round');
+  });
+
+  copyBtn.addEventListener('click', function () {
+    var code = roomCodeDisplay.textContent;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(code).then(function () {
+        copyBtn.textContent = 'コピーした！';
+        setTimeout(function () { copyBtn.textContent = 'コピー'; }, 1500);
+      }).catch(function () {});
+    }
+  });
+
+  var lastCode = localStorage.getItem('dice_room_code');
+  if (lastCode) codeInput.value = lastCode;
+})();
+</script>
+</body>
+</html>
