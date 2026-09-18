@@ -46,7 +46,7 @@ function publicState(room) {
 }
 
 function buildAmidaLadder(columnCount) {
-  const rows = Math.min(14, Math.max(6, columnCount + 2));
+  const rows = Math.max(40, Math.min(90, columnCount * 10));
   const rungs = [];
   for (let r = 0; r < rows; r++) {
     let c = 0;
@@ -202,7 +202,7 @@ io.on('connection', (socket) => {
       resultsByPid[pid] = finalLabels[endCol];
     });
 
-    room.amida = { labels: finalLabels, columns, rows, rungs, resultsByPid, revealed: false };
+    room.amida = { id: Date.now() + '_' + Math.random().toString(36).slice(2, 8), labels: finalLabels, columns, rows, rungs, resultsByPid, revealed: false, revealedCols: [] };
     room.updatedAt = Date.now();
     broadcast(joinedCode);
   });
@@ -212,6 +212,28 @@ io.on('connection', (socket) => {
     const room = rooms.get(joinedCode);
     if (!room || !room.amida) return;
     room.amida.revealed = true;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('amida_trace', ({ col }) => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room || !room.amida || !room.amida.revealed) return;
+    col = Number(col);
+    if (!Number.isInteger(col) || col < 0 || col >= room.amida.columns.length) return;
+    if (!room.amida.revealedCols.includes(col)) {
+      room.amida.revealedCols.push(col);
+      room.updatedAt = Date.now();
+      broadcast(joinedCode);
+    }
+  });
+
+  socket.on('amida_reveal_all', () => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room || !room.amida || !room.amida.revealed) return;
+    room.amida.revealedCols = room.amida.columns.map((_, i) => i);
     room.updatedAt = Date.now();
     broadcast(joinedCode);
   });
