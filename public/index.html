@@ -126,6 +126,44 @@
   .actions { display: flex; gap: 0.6rem; }
   .actions button { flex: 1; }
   .footnote { text-align: center; font-size: 12px; color: var(--ink-secondary); }
+
+  .game-tabs { display: flex; gap: 6px; background: var(--surface-2); border-radius: 12px; padding: 4px; margin-bottom: 1rem; }
+  .game-tab {
+    flex: 1; background: transparent; color: var(--ink-secondary); font-weight: 700; font-size: 13px;
+    padding: 0.5rem 0.4rem; border-radius: 9px;
+  }
+  .game-tab.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+
+  textarea {
+    width: 100%; font-family: inherit; font-size: 14px; padding: 0.6rem 0.7rem; resize: vertical;
+    border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--ink);
+  }
+  textarea:focus { outline: 2px solid var(--felt); outline-offset: 1px; }
+
+  .amida-scroll { overflow-x: auto; padding-bottom: 4px; margin-bottom: 0.8rem; }
+  .amida-row { display: flex; }
+  .amida-row > div {
+    width: 56px; flex-shrink: 0; text-align: center; font-size: 12px; color: var(--ink-secondary);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px;
+  }
+  .amida-row > div.me { color: var(--felt); font-weight: 700; }
+  #amida-svg { display: block; }
+  .amida-line { stroke: var(--ink-secondary); stroke-width: 2; opacity: 0.5; }
+  .amida-path { fill: none; stroke-width: 3; stroke-linecap: round; opacity: 0.9; }
+
+  .amida-results { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.8rem; max-height: 300px; overflow-y: auto; }
+  .amida-result-row {
+    display: flex; align-items: center; gap: 0.7rem; padding: 0.55rem 0.75rem; border-radius: 12px;
+    background: var(--surface-2); border: 1px solid transparent; cursor: default;
+  }
+  .amida-result-row.revealed { cursor: pointer; }
+  .amida-result-row.me { border-color: var(--felt); }
+  .amida-result-row.highlighted { border-color: var(--result-color, var(--accent)); }
+  .amida-result-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--ink-secondary); }
+  .amida-result-name { flex: 1; font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .amida-result-name .tag { font-size: 11px; color: var(--felt); font-weight: 700; margin-left: 0.35em; }
+  .amida-result-label { font-weight: 700; font-size: 14px; max-width: 40%; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   [hidden] { display: none !important; }
   @media (prefers-reduced-motion: reduce) {
     .big-die.spinning, .big-die.landed, .die:not(.empty) { animation: none; }
@@ -165,20 +203,51 @@
       <button class="leave-link" id="leave-btn" type="button">退出する</button>
     </div>
     <div class="body">
-      <div class="dice-stage" id="dice-stage" hidden>
-        <div class="big-dice-row">
-          <div class="big-die" id="big-die-0"><div class="big-die-face" id="big-die-face-0"></div></div>
-          <div class="big-die" id="big-die-1"><div class="big-die-face" id="big-die-face-1"></div></div>
-          <div class="big-die" id="big-die-2"><div class="big-die-face" id="big-die-face-2"></div></div>
+      <div class="game-tabs">
+        <button class="game-tab" id="tab-dice" data-game="dice" type="button">🎲 ダイス対決</button>
+        <button class="game-tab" id="tab-amida" data-game="amida" type="button">🪜 あみだくじ</button>
+      </div>
+
+      <div id="dice-game">
+        <div class="dice-stage" id="dice-stage" hidden>
+          <div class="big-dice-row">
+            <div class="big-die" id="big-die-0"><div class="big-die-face" id="big-die-face-0"></div></div>
+            <div class="big-die" id="big-die-1"><div class="big-die-face" id="big-die-face-1"></div></div>
+            <div class="big-die" id="big-die-2"><div class="big-die-face" id="big-die-face-2"></div></div>
+          </div>
+          <div class="dice-sum" id="dice-sum">合計 <span class="val" id="dice-sum-val">0</span></div>
         </div>
-        <div class="dice-sum" id="dice-sum">合計 <span class="val" id="dice-sum-val">0</span></div>
+        <div class="players" id="players-list"></div>
+        <div class="status-line" id="status-line"></div>
+        <div class="actions">
+          <button class="primary" id="roll-btn">サイコロを振る</button>
+          <button class="ghost" id="next-round-btn" hidden>もう一度</button>
+        </div>
       </div>
-      <div class="players" id="players-list"></div>
-      <div class="status-line" id="status-line"></div>
-      <div class="actions">
-        <button class="primary" id="roll-btn">サイコロを振る</button>
-        <button class="ghost" id="next-round-btn" hidden>もう一度</button>
+
+      <div id="amida-game" hidden>
+        <div id="amida-setup">
+          <label for="amida-labels-input">結果の項目（1行1つ、空欄なら自動で番号になります）</label>
+          <textarea id="amida-labels-input" rows="4" placeholder="当たり&#10;はずれ&#10;はずれ"></textarea>
+          <div class="footnote" style="margin: 0.4rem 0 0.8rem;">参加人数と行数が違う場合は自動で番号（1, 2, 3…）になります。</div>
+          <button class="primary" id="amida-start-btn">あみだくじを始める</button>
+          <div class="err" id="amida-err"></div>
+        </div>
+        <div id="amida-ladder-wrap" hidden>
+          <div class="amida-scroll">
+            <div class="amida-row" id="amida-names"></div>
+            <svg id="amida-svg"></svg>
+            <div class="amida-row" id="amida-outcomes"></div>
+          </div>
+          <div class="amida-results" id="amida-results"></div>
+          <div class="actions">
+            <button class="primary" id="amida-reveal-btn">結果を見る</button>
+            <button class="ghost" id="amida-again-btn" hidden>もう一度くじを作る</button>
+          </div>
+          <div class="err" id="amida-run-err"></div>
+        </div>
       </div>
+
       <div class="footnote">このブラウザがあなたの席です。他の人は同じ合言葉で参加してください。</div>
     </div>
   </section>
@@ -245,6 +314,26 @@
     { die: document.getElementById('big-die-1'), face: document.getElementById('big-die-face-1') },
     { die: document.getElementById('big-die-2'), face: document.getElementById('big-die-face-2') }
   ];
+
+  var tabDice = document.getElementById('tab-dice');
+  var tabAmida = document.getElementById('tab-amida');
+  var diceGameDiv = document.getElementById('dice-game');
+  var amidaGameDiv = document.getElementById('amida-game');
+  var amidaSetupDiv = document.getElementById('amida-setup');
+  var amidaLabelsInput = document.getElementById('amida-labels-input');
+  var amidaStartBtn = document.getElementById('amida-start-btn');
+  var amidaErr = document.getElementById('amida-err');
+  var amidaLadderWrap = document.getElementById('amida-ladder-wrap');
+  var amidaNamesRow = document.getElementById('amida-names');
+  var amidaSvg = document.getElementById('amida-svg');
+  var amidaOutcomesRow = document.getElementById('amida-outcomes');
+  var amidaResultsDiv = document.getElementById('amida-results');
+  var amidaRevealBtn = document.getElementById('amida-reveal-btn');
+  var amidaAgainBtn = document.getElementById('amida-again-btn');
+  var amidaRunErr = document.getElementById('amida-run-err');
+
+  var AMIDA_COLORS = ['#c1440e', '#1d6fa5', '#8a5cb5', '#c2185b', '#2e8b57', '#b8860b', '#5c6bc0', '#00838f'];
+  var amidaHighlightCol = null;
 
   nameInput.value = localStorage.getItem('dice_name') || '';
 
@@ -355,6 +444,18 @@
       return;
     }
     if (!latestData) return;
+
+    var game = latestData.game || 'dice';
+    tabDice.classList.toggle('active', game === 'dice');
+    tabAmida.classList.toggle('active', game === 'amida');
+    diceGameDiv.hidden = game !== 'dice';
+    amidaGameDiv.hidden = game !== 'amida';
+
+    renderDice();
+    renderAmida();
+  }
+
+  function renderDice() {
     var round = latestData.round || 1;
     var players = latestData.players || [];
     var rolls = latestData.rolls || {};
@@ -419,6 +520,132 @@
     nextRoundBtn.hidden = !allRolled;
     nextRoundBtn.textContent = isTie ? '同点者で振り直す' : '新しいゲーム';
   }
+
+  function nameForPid(pid) {
+    var p = (latestData.players || []).find(function (x) { return x.id === pid; });
+    return p ? p.name : '(退出済み)';
+  }
+
+  function amidaPathPoints(rows, rungs, startCol) {
+    var pos = startCol;
+    var points = [{ x: pos, y: 0 }];
+    for (var r = 0; r < rows; r++) {
+      var moveRight = rungs.some(function (rg) { return rg.row === r && rg.col === pos; });
+      var moveLeft = rungs.some(function (rg) { return rg.row === r && rg.col === pos - 1; });
+      points.push({ x: pos, y: r + 0.5 });
+      if (moveRight) pos += 1;
+      else if (moveLeft) pos -= 1;
+      points.push({ x: pos, y: r + 0.5 });
+    }
+    points.push({ x: pos, y: rows });
+    return points;
+  }
+
+  function renderAmida() {
+    var amida = latestData.amida;
+    amidaLadderWrap.hidden = !amida;
+    amidaSetupDiv.hidden = !!amida;
+    if (!amida) return;
+
+    var colWidth = 56;
+    var rowHeight = 28;
+    var marginY = 10;
+    var columns = amida.columns;
+    var svgWidth = columns.length * colWidth;
+    var svgHeight = marginY * 2 + amida.rows * rowHeight;
+
+    amidaNamesRow.innerHTML = columns.map(function (pid) {
+      return '<div class="' + (pid === playerId ? 'me' : '') + '">' + escapeHtml(nameForPid(pid)) + '</div>';
+    }).join('');
+
+    var lines = [];
+    for (var i = 0; i < columns.length; i++) {
+      var x = i * colWidth + colWidth / 2;
+      lines.push('<line class="amida-line" x1="' + x + '" y1="' + marginY + '" x2="' + x + '" y2="' + (marginY + amida.rows * rowHeight) + '"></line>');
+    }
+    amida.rungs.forEach(function (rg) {
+      var y = marginY + rg.row * rowHeight + rowHeight / 2;
+      var x1 = rg.col * colWidth + colWidth / 2;
+      var x2 = (rg.col + 1) * colWidth + colWidth / 2;
+      lines.push('<line class="amida-line" x1="' + x1 + '" y1="' + y + '" x2="' + x2 + '" y2="' + y + '"></line>');
+    });
+
+    var highlightSvg = '';
+    if (amida.revealed && amidaHighlightCol !== null) {
+      var points = amidaPathPoints(amida.rows, amida.rungs, amidaHighlightCol);
+      var d = points.map(function (pt, idx) {
+        var px = pt.x * colWidth + colWidth / 2;
+        var py = marginY + pt.y * rowHeight;
+        return (idx === 0 ? 'M' : 'L') + px + ',' + py;
+      }).join(' ');
+      var color = AMIDA_COLORS[amidaHighlightCol % AMIDA_COLORS.length];
+      highlightSvg = '<path class="amida-path" d="' + d + '" stroke="' + color + '"></path>';
+    }
+
+    amidaSvg.setAttribute('viewBox', '0 0 ' + svgWidth + ' ' + svgHeight);
+    amidaSvg.setAttribute('width', svgWidth);
+    amidaSvg.setAttribute('height', svgHeight);
+    amidaSvg.innerHTML = lines.join('') + highlightSvg;
+
+    // The bottom row is the FIXED slot at the foot of each ladder column —
+    // whoever's highlighted path lands there reads off this label, so it
+    // must not be swapped for "this column's own player's result".
+    amidaOutcomesRow.innerHTML = amida.labels.map(function (label) {
+      return '<div>' + (amida.revealed ? escapeHtml(label) : '？') + '</div>';
+    }).join('');
+
+    amidaResultsDiv.innerHTML = columns.map(function (pid, i) {
+      var isMe = pid === playerId;
+      var isHighlighted = amidaHighlightCol === i;
+      var cls = 'amida-result-row' + (amida.revealed ? ' revealed' : '') + (isMe ? ' me' : '') + (isHighlighted ? ' highlighted' : '');
+      var swatchColor = amida.revealed ? AMIDA_COLORS[i % AMIDA_COLORS.length] : '';
+      var style = swatchColor ? ' style="--result-color:' + swatchColor + '"' : '';
+      var swatch = '<span class="amida-result-swatch"' + (swatchColor ? ' style="background:' + swatchColor + '"' : '') + '></span>';
+      var label = amida.revealed ? amida.resultsByPid[pid] : '？';
+      return '<div class="' + cls + '" data-col="' + i + '"' + style + '>' +
+        swatch +
+        '<span class="amida-result-name">' + escapeHtml(nameForPid(pid)) + (isMe ? '<span class="tag">あなた</span>' : '') + '</span>' +
+        '<span class="amida-result-label">' + escapeHtml(label) + '</span>' +
+        '</div>';
+    }).join('');
+
+    amidaRevealBtn.hidden = amida.revealed;
+    amidaAgainBtn.hidden = !amida.revealed;
+  }
+
+  tabDice.addEventListener('click', function () {
+    if (isConnected) socket.emit('switch_game', { game: 'dice' });
+  });
+  tabAmida.addEventListener('click', function () {
+    if (isConnected) socket.emit('switch_game', { game: 'amida' });
+  });
+
+  amidaStartBtn.addEventListener('click', function () {
+    if (!isConnected) { amidaErr.textContent = '接続が切れています。'; return; }
+    var lines = amidaLabelsInput.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    amidaErr.textContent = '';
+    amidaHighlightCol = null;
+    socket.emit('amida_start', { labels: lines });
+  });
+
+  amidaRevealBtn.addEventListener('click', function () {
+    if (!isConnected) { amidaRunErr.textContent = '接続が切れています。'; return; }
+    socket.emit('amida_reveal');
+  });
+
+  amidaAgainBtn.addEventListener('click', function () {
+    if (!isConnected) { amidaRunErr.textContent = '接続が切れています。'; return; }
+    amidaHighlightCol = null;
+    socket.emit('amida_reset');
+  });
+
+  amidaResultsDiv.addEventListener('click', function (e) {
+    var row = e.target.closest('.amida-result-row.revealed');
+    if (!row) return;
+    var col = parseInt(row.getAttribute('data-col'), 10);
+    amidaHighlightCol = (amidaHighlightCol === col) ? null : col;
+    render();
+  });
 
   createBtn.addEventListener('click', function () {
     var name = nameInput.value.trim();

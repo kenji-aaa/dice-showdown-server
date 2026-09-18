@@ -28,13 +28,49 @@ function randomFace() {
 function createRoom() {
   let code;
   do { code = randomCode(); } while (rooms.has(code));
-  const room = { code, round: 1, players: [], rolls: {}, activeIds: null, updatedAt: Date.now() };
+  const room = { code, game: 'dice', round: 1, players: [], rolls: {}, activeIds: null, amida: null, updatedAt: Date.now() };
   rooms.set(code, room);
   return room;
 }
 
 function publicState(room) {
-  return { code: room.code, round: room.round, players: room.players, rolls: room.rolls, activeIds: room.activeIds };
+  return {
+    code: room.code,
+    game: room.game,
+    round: room.round,
+    players: room.players,
+    rolls: room.rolls,
+    activeIds: room.activeIds,
+    amida: room.amida,
+  };
+}
+
+function buildAmidaLadder(columnCount) {
+  const rows = Math.min(14, Math.max(6, columnCount + 2));
+  const rungs = [];
+  for (let r = 0; r < rows; r++) {
+    let c = 0;
+    while (c < columnCount - 1) {
+      if (Math.random() < 0.35) {
+        rungs.push({ row: r, col: c });
+        c += 2; // the node at c+1 is now spoken for this row — skip it
+      } else {
+        c += 1;
+      }
+    }
+  }
+  return { rows, rungs };
+}
+
+function traceAmidaColumn(rows, rungs, startCol) {
+  let pos = startCol;
+  for (let r = 0; r < rows; r++) {
+    const right = rungs.some((rg) => rg.row === r && rg.col === pos);
+    const left = rungs.some((rg) => rg.row === r && rg.col === pos - 1);
+    if (right) pos += 1;
+    else if (left) pos -= 1;
+  }
+  return pos;
 }
 
 function broadcast(code) {
@@ -131,6 +167,60 @@ io.on('connection', (socket) => {
 
     room.round += 1;
     room.activeIds = winners.length > 1 ? winners.map((p) => p.id) : null;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('switch_game', ({ game }) => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room) return;
+    if (game !== 'dice' && game !== 'amida') return;
+    room.game = game;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('amida_start', ({ labels }) => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room) return;
+    const columns = room.players.map((p) => p.id);
+    if (columns.length < 2) return;
+
+    let finalLabels = Array.isArray(labels)
+      ? labels.map((l) => String(l || '').slice(0, 20).trim()).filter(Boolean)
+      : [];
+    if (finalLabels.length !== columns.length) {
+      finalLabels = columns.map((_, i) => String(i + 1));
+    }
+
+    const { rows, rungs } = buildAmidaLadder(columns.length);
+    const resultsByPid = {};
+    columns.forEach((pid, i) => {
+      const endCol = traceAmidaColumn(rows, rungs, i);
+      resultsByPid[pid] = finalLabels[endCol];
+    });
+
+    room.amida = { labels: finalLabels, columns, rows, rungs, resultsByPid, revealed: false };
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('amida_reveal', () => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room || !room.amida) return;
+    room.amida.revealed = true;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('amida_reset', () => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room) return;
+    room.amida = null;
     room.updatedAt = Date.now();
     broadcast(joinedCode);
   });
