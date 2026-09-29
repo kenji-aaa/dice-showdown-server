@@ -176,6 +176,9 @@
   .amida-result-name { flex: 1; font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .amida-result-name .tag { font-size: 11px; color: var(--felt); font-weight: 700; margin-left: 0.35em; }
   .amida-result-label { font-weight: 700; font-size: 14px; max-width: 40%; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .amida-result-row.atari { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--surface-2)); }
+  .amida-result-row.atari .amida-result-label { color: var(--accent); font-size: 16px; }
+  #amida-outcomes > div.atari { color: var(--accent); font-weight: 700; }
 
   [hidden] { display: none !important; }
   @media (prefers-reduced-motion: reduce) {
@@ -244,7 +247,7 @@
           <input type="text" inputmode="numeric" id="amida-slot-count" style="max-width:100px; margin-bottom:0.8rem;" value="2">
           <label for="amida-labels-input">結果の項目（1行1つ、空欄なら自動で番号になります）</label>
           <textarea id="amida-labels-input" rows="4" placeholder="当たり&#10;はずれ&#10;はずれ"></textarea>
-          <div class="footnote" style="margin: 0.4rem 0 0.8rem;">参加人数と行数が違う場合は自動で番号（1, 2, 3…）になります。</div>
+          <div class="footnote" style="margin: 0.4rem 0 0.8rem;">参加人数と行数が違う場合は自動で「当たり」1人＋「はずれ」になります。</div>
           <button class="primary" id="amida-start-btn">スタート位置を選ぶ</button>
           <div class="err" id="amida-err"></div>
         </div>
@@ -785,22 +788,25 @@
     // it never depends on whether any particular player's trace has
     // played yet, so it can show as soon as the ladder itself is revealed.
     amidaOutcomesRow.innerHTML = amida.labels.map(function (label) {
-      return '<div>' + (amida.revealed ? escapeHtml(label) : '？') + '</div>';
+      var isAtari = label.trim() === '当たり';
+      return '<div class="' + (amida.revealed && isAtari ? 'atari' : '') + '">' + (amida.revealed ? escapeHtml(label) : '？') + '</div>';
     }).join('');
 
     amidaResultsDiv.innerHTML = columns.map(function (pid, i) {
       var isMe = pid === playerId;
       var isKnown = !!amidaKnownRevealed[i];
       var isHighlighted = amidaHighlightCol === i;
-      var cls = 'amida-result-row' + (amida.revealed ? ' clickable' : '') + (isMe ? ' me' : '') + (isHighlighted ? ' highlighted' : '');
+      var label = isKnown ? amida.resultsByPid[pid] : '？';
+      var isAtari = isKnown && label.trim() === '当たり';
+      var cls = 'amida-result-row' + (amida.revealed ? ' clickable' : '') + (isMe ? ' me' : '') + (isHighlighted ? ' highlighted' : '') + (isAtari ? ' atari' : '');
       var swatchColor = isKnown ? AMIDA_COLORS[i % AMIDA_COLORS.length] : '';
       var style = swatchColor ? ' style="--result-color:' + swatchColor + '"' : '';
       var swatch = '<span class="amida-result-swatch"' + (swatchColor ? ' style="background:' + swatchColor + '"' : '') + '></span>';
-      var label = isKnown ? amida.resultsByPid[pid] : '？';
+      var labelText = (isAtari ? '🎉 ' : '') + label;
       return '<div class="' + cls + '" data-col="' + i + '"' + style + '>' +
         swatch +
         '<span class="amida-result-name">' + escapeHtml(nameForPid(pid)) + (isMe ? '<span class="tag">あなた</span>' : '') + '</span>' +
-        '<span class="amida-result-label">' + escapeHtml(label) + '</span>' +
+        '<span class="amida-result-label">' + escapeHtml(labelText) + '</span>' +
         '</div>';
     }).join('');
 

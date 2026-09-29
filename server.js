@@ -197,7 +197,9 @@ io.on('connection', (socket) => {
       ? labels.map((l) => String(l || '').slice(0, 20).trim()).filter(Boolean)
       : [];
     if (finalLabels.length !== slotCount) {
-      finalLabels = Array.from({ length: slotCount }, (_, i) => String(i + 1));
+      // A bare "1, 2, 3..." fallback reads as meaningless once revealed —
+      // default to the standard single-winner amidakuji instead.
+      finalLabels = Array.from({ length: slotCount }, (_, i) => (i === 0 ? '当たり' : 'はずれ'));
     }
 
     room.amida = {
