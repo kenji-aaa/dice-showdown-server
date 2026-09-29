@@ -245,9 +245,7 @@
         <div id="amida-setup">
           <label for="amida-slot-count">参加人数</label>
           <input type="text" inputmode="numeric" id="amida-slot-count" style="max-width:100px; margin-bottom:0.8rem;" value="2">
-          <label for="amida-labels-input">結果の項目（1行1つ、空欄なら自動で番号になります）</label>
-          <textarea id="amida-labels-input" rows="4" placeholder="当たり&#10;はずれ&#10;はずれ"></textarea>
-          <div class="footnote" style="margin: 0.4rem 0 0.8rem;">参加人数と行数が違う場合は自動で「当たり」1人＋「はずれ」になります。</div>
+          <div class="footnote" style="margin: 0 0 0.8rem;">「当たり」1人＋「はずれ」で振り分けます。</div>
           <button class="primary" id="amida-start-btn">スタート位置を選ぶ</button>
           <div class="err" id="amida-err"></div>
         </div>
@@ -349,7 +347,6 @@
   var amidaGameDiv = document.getElementById('amida-game');
   var amidaSetupDiv = document.getElementById('amida-setup');
   var amidaSlotCountInput = document.getElementById('amida-slot-count');
-  var amidaLabelsInput = document.getElementById('amida-labels-input');
   var amidaStartBtn = document.getElementById('amida-start-btn');
   var amidaErr = document.getElementById('amida-err');
   var amidaPickingDiv = document.getElementById('amida-picking');
@@ -830,9 +827,8 @@
       amidaErr.textContent = '参加人数は2〜30人で入力してください。';
       return;
     }
-    var lines = amidaLabelsInput.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
     amidaErr.textContent = '';
-    socket.emit('amida_setup', { labels: lines, slotCount: slotCount });
+    socket.emit('amida_setup', { slotCount: slotCount });
   });
 
   amidaSlotsDiv.addEventListener('click', function (e) {
