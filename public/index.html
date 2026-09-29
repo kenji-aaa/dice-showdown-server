@@ -180,6 +180,22 @@
   .amida-result-row.atari .amida-result-label { color: var(--accent); font-size: 16px; }
   #amida-outcomes > div.atari { color: var(--accent); font-weight: 700; }
 
+  .amida-banner {
+    position: fixed; top: 38%; left: 50%; z-index: 60; pointer-events: none;
+    background: var(--accent); color: var(--accent-ink);
+    font-family: "Zen Maru Gothic", sans-serif; font-weight: 700; font-size: 22px;
+    padding: 1rem 1.75rem; border-radius: 18px; box-shadow: var(--shadow);
+    text-align: center; white-space: nowrap;
+    transform: translate(-50%, -50%) scale(0.4); opacity: 0;
+    transition: transform 0.45s cubic-bezier(.34,1.56,.64,1), opacity 0.25s ease;
+  }
+  .amida-banner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  @keyframes amida-pulse {
+    0%, 100% { transform: scale(1); }
+    35% { transform: scale(1.05); }
+  }
+  .amida-result-row.impact { animation: amida-pulse 0.5s ease; }
+
   [hidden] { display: none !important; }
   @media (prefers-reduced-motion: reduce) {
     .big-die.spinning, .big-die.landed, .die:not(.empty) { animation: none; }
@@ -242,6 +258,7 @@
       </div>
 
       <div id="amida-game" hidden>
+        <div class="amida-banner" id="amida-banner" hidden></div>
         <div id="amida-setup">
           <label for="amida-slot-count">参加人数</label>
           <input type="text" inputmode="numeric" id="amida-slot-count" style="max-width:100px; margin-bottom:0.8rem;" value="2">
@@ -354,6 +371,7 @@
   var amidaPickingStatus = document.getElementById('amida-picking-status');
   var amidaBeginBtn = document.getElementById('amida-begin-btn');
   var amidaCancelBtn = document.getElementById('amida-cancel-btn');
+  var amidaBanner = document.getElementById('amida-banner');
   var amidaLadderWrap = document.getElementById('amida-ladder-wrap');
   var amidaNamesRow = document.getElementById('amida-names');
   var amidaSvg = document.getElementById('amida-svg');
@@ -604,6 +622,51 @@
 
   function svgEl(tag) { return document.createElementNS('http://www.w3.org/2000/svg', tag); }
 
+  var amidaAudioCtx = null;
+  function getAmidaAudioCtx() {
+    if (amidaAudioCtx) return amidaAudioCtx;
+    try {
+      amidaAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      amidaAudioCtx = null;
+    }
+    return amidaAudioCtx;
+  }
+  function playAmidaTones(freqs, step) {
+    var ctx = getAmidaAudioCtx();
+    if (!ctx) return;
+    var t0 = ctx.currentTime;
+    freqs.forEach(function (freq, i) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      var start = t0 + i * step;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.22, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + step + 0.08);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + step + 0.1);
+    });
+  }
+  function playAtariChime() { playAmidaTones([523.25, 659.25, 783.99, 1046.5], 0.14); }
+  function playHazureBlip() { playAmidaTones([349.23, 293.66], 0.12); }
+
+  var amidaBannerTimer = null;
+  function showAmidaBanner(text) {
+    if (amidaBannerTimer) { clearTimeout(amidaBannerTimer.hide); clearTimeout(amidaBannerTimer.finish); }
+    amidaBanner.textContent = text;
+    amidaBanner.hidden = false;
+    amidaBanner.classList.remove('show');
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { amidaBanner.classList.add('show'); });
+    });
+    var hide = setTimeout(function () { amidaBanner.classList.remove('show'); }, 1700);
+    var finish = setTimeout(function () { amidaBanner.hidden = true; }, 2000);
+    amidaBannerTimer = { hide: hide, finish: finish };
+  }
+
   function ensureAmidaLayers() {
     if (amidaBaseLayer && amidaBaseLayer.ownerSVGElement === amidaSvg) return;
     amidaSvg.innerHTML = '';
@@ -655,6 +718,22 @@
       amidaAnimatingCol = null;
       amidaHighlightCol = col;
       render();
+
+      var pid = amida.columns[col];
+      var label = (amida.resultsByPid[pid] || '').trim();
+      if (label === '当たり') {
+        playAtariChime();
+        showAmidaBanner('🎉 ' + nameForPid(pid) + ' が当たり！');
+      } else {
+        playHazureBlip();
+      }
+      var row = amidaResultsDiv.querySelector('.amida-result-row[data-col="' + col + '"]');
+      if (row) {
+        row.classList.remove('impact');
+        void row.offsetWidth; // restart the animation even if it played before
+        row.classList.add('impact');
+      }
+
       processAmidaQueue();
     }, duration + 150);
   }
