@@ -140,6 +140,18 @@
   }
   textarea:focus { outline: 2px solid var(--felt); outline-offset: 1px; }
 
+  .amida-slots { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 0.8rem; }
+  .amida-slot {
+    flex: 1 1 72px; min-width: 72px; padding: 0.55rem 0.4rem; border-radius: 10px;
+    background: var(--surface-2); border: 1px solid var(--border); text-align: center;
+    font-size: 13px; cursor: pointer; overflow: hidden;
+  }
+  .amida-slot .num { display: block; font-size: 11px; color: var(--ink-secondary); margin-bottom: 2px; }
+  .amida-slot .who { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .amida-slot.taken { background: color-mix(in srgb, var(--felt) 15%, var(--surface-2)); border-color: var(--felt); }
+  .amida-slot.mine { border-color: var(--accent); font-weight: 700; }
+  .amida-slot.blocked { cursor: default; opacity: 0.85; }
+
   .amida-scroll { overflow-x: auto; padding-bottom: 4px; margin-bottom: 0.8rem; }
   .amida-row { display: flex; }
   .amida-row > div {
@@ -228,11 +240,22 @@
 
       <div id="amida-game" hidden>
         <div id="amida-setup">
+          <label for="amida-slot-count">参加人数</label>
+          <input type="text" inputmode="numeric" id="amida-slot-count" style="max-width:100px; margin-bottom:0.8rem;" value="2">
           <label for="amida-labels-input">結果の項目（1行1つ、空欄なら自動で番号になります）</label>
           <textarea id="amida-labels-input" rows="4" placeholder="当たり&#10;はずれ&#10;はずれ"></textarea>
           <div class="footnote" style="margin: 0.4rem 0 0.8rem;">参加人数と行数が違う場合は自動で番号（1, 2, 3…）になります。</div>
-          <button class="primary" id="amida-start-btn">あみだくじを始める</button>
+          <button class="primary" id="amida-start-btn">スタート位置を選ぶ</button>
           <div class="err" id="amida-err"></div>
+        </div>
+        <div id="amida-picking" hidden>
+          <div class="footnote" style="margin-bottom:0.6rem;">好きなスタート位置をタップしてください。もう一度タップすると取り消せます。</div>
+          <div class="amida-slots" id="amida-slots"></div>
+          <div class="status-line" id="amida-picking-status"></div>
+          <div class="actions">
+            <button class="primary" id="amida-begin-btn" disabled>あみだくじスタート</button>
+            <button class="ghost" id="amida-cancel-btn">やめる</button>
+          </div>
         </div>
         <div id="amida-ladder-wrap" hidden>
           <div class="amida-scroll">
@@ -322,9 +345,15 @@
   var diceGameDiv = document.getElementById('dice-game');
   var amidaGameDiv = document.getElementById('amida-game');
   var amidaSetupDiv = document.getElementById('amida-setup');
+  var amidaSlotCountInput = document.getElementById('amida-slot-count');
   var amidaLabelsInput = document.getElementById('amida-labels-input');
   var amidaStartBtn = document.getElementById('amida-start-btn');
   var amidaErr = document.getElementById('amida-err');
+  var amidaPickingDiv = document.getElementById('amida-picking');
+  var amidaSlotsDiv = document.getElementById('amida-slots');
+  var amidaPickingStatus = document.getElementById('amida-picking-status');
+  var amidaBeginBtn = document.getElementById('amida-begin-btn');
+  var amidaCancelBtn = document.getElementById('amida-cancel-btn');
   var amidaLadderWrap = document.getElementById('amida-ladder-wrap');
   var amidaNamesRow = document.getElementById('amida-names');
   var amidaSvg = document.getElementById('amida-svg');
@@ -349,6 +378,7 @@
   var amidaRowHeight = 10;
   var amidaBaseLayer = null;
   var amidaHighlightLayerEl = null;
+  var amidaSlotCountInitialized = false;
 
   nameInput.value = localStorage.getItem('dice_name') || '';
 
@@ -651,11 +681,44 @@
     socket.emit('amida_trace', { col: col });
   }
 
+  function renderAmidaPicking(amida) {
+    var players = latestData.players || [];
+    var takenCount = amida.slots.filter(function (s) { return s !== null; }).length;
+
+    amidaSlotsDiv.innerHTML = amida.slots.map(function (pid, i) {
+      var isMine = pid === playerId;
+      var isTaken = pid !== null;
+      var cls = 'amida-slot' + (isTaken ? ' taken' : '') + (isMine ? ' mine' : '') + (isTaken && !isMine ? ' blocked' : '');
+      var who = isTaken ? escapeHtml(nameForPid(pid)) : '空き';
+      return '<div class="' + cls + '" data-slot="' + i + '">' +
+        '<span class="num">位置' + (i + 1) + '</span>' +
+        '<span class="who">' + who + '</span>' +
+        '</div>';
+    }).join('');
+
+    amidaPickingStatus.textContent = takenCount + ' / ' + amida.slotCount + '人が選択済み';
+    amidaBeginBtn.disabled = takenCount !== amida.slotCount;
+  }
+
   function renderAmida() {
     var amida = latestData.amida;
-    amidaLadderWrap.hidden = !amida;
     amidaSetupDiv.hidden = !!amida;
-    if (!amida) return;
+    amidaPickingDiv.hidden = !amida || amida.phase !== 'picking';
+    amidaLadderWrap.hidden = !amida || amida.phase !== 'ladder';
+
+    if (!amida) {
+      if (!amidaSlotCountInitialized) {
+        amidaSlotCountInitialized = true;
+        var suggested = Math.max(2, (latestData.players || []).length);
+        amidaSlotCountInput.value = String(suggested);
+      }
+      return;
+    }
+
+    if (amida.phase === 'picking') {
+      renderAmidaPicking(amida);
+      return;
+    }
 
     if (amida.id !== amidaSessionId) {
       amidaSessionId = amida.id;
@@ -756,9 +819,36 @@
 
   amidaStartBtn.addEventListener('click', function () {
     if (!isConnected) { amidaErr.textContent = '接続が切れています。'; return; }
+    var slotCount = Math.round(Number(amidaSlotCountInput.value));
+    if (!slotCount || slotCount < 2 || slotCount > 30) {
+      amidaErr.textContent = '参加人数は2〜30人で入力してください。';
+      return;
+    }
     var lines = amidaLabelsInput.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
     amidaErr.textContent = '';
-    socket.emit('amida_start', { labels: lines });
+    socket.emit('amida_setup', { labels: lines, slotCount: slotCount });
+  });
+
+  amidaSlotsDiv.addEventListener('click', function (e) {
+    var el = e.target.closest('.amida-slot');
+    if (!el) return;
+    var amida = latestData && latestData.amida;
+    if (!amida || amida.phase !== 'picking') return;
+    var idx = parseInt(el.getAttribute('data-slot'), 10);
+    var heldBy = amida.slots[idx];
+    if (heldBy && heldBy !== playerId) return;
+    if (!isConnected) return;
+    socket.emit('amida_pick_slot', { slot: idx });
+  });
+
+  amidaBeginBtn.addEventListener('click', function () {
+    if (!isConnected) return;
+    socket.emit('amida_begin');
+  });
+
+  amidaCancelBtn.addEventListener('click', function () {
+    if (!isConnected) return;
+    socket.emit('amida_reset');
   });
 
   amidaRevealBtn.addEventListener('click', function () {

@@ -83,6 +83,10 @@ function removePlayer(code, pid) {
   if (!room) return;
   room.players = room.players.filter((p) => p.id !== pid);
   if (room.activeIds) room.activeIds = room.activeIds.filter((id) => id !== pid);
+  if (room.amida && room.amida.phase === 'picking') {
+    const idx = room.amida.slots.indexOf(pid);
+    if (idx !== -1) room.amida.slots[idx] = null;
+  }
   room.updatedAt = Date.now();
   if (room.players.length === 0) {
     rooms.delete(code);
@@ -181,28 +185,72 @@ io.on('connection', (socket) => {
     broadcast(joinedCode);
   });
 
-  socket.on('amida_start', ({ labels }) => {
+  socket.on('amida_setup', ({ labels, slotCount }) => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
     if (!room) return;
-    const columns = room.players.map((p) => p.id);
-    if (columns.length < 2) return;
+
+    slotCount = Math.round(Number(slotCount));
+    if (!Number.isInteger(slotCount) || slotCount < 2 || slotCount > 30) return;
 
     let finalLabels = Array.isArray(labels)
       ? labels.map((l) => String(l || '').slice(0, 20).trim()).filter(Boolean)
       : [];
-    if (finalLabels.length !== columns.length) {
-      finalLabels = columns.map((_, i) => String(i + 1));
+    if (finalLabels.length !== slotCount) {
+      finalLabels = Array.from({ length: slotCount }, (_, i) => String(i + 1));
     }
 
+    room.amida = {
+      id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      phase: 'picking',
+      labels: finalLabels,
+      slotCount,
+      slots: new Array(slotCount).fill(null),
+    };
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('amida_pick_slot', ({ slot }) => {
+    if (!joinedCode || !playerId) return;
+    const room = rooms.get(joinedCode);
+    if (!room || !room.amida || room.amida.phase !== 'picking') return;
+    slot = Number(slot);
+    if (!Number.isInteger(slot) || slot < 0 || slot >= room.amida.slotCount) return;
+
+    const slots = room.amida.slots;
+    if (slots[slot] !== null && slots[slot] !== playerId) return; // someone else already has it
+
+    const currentIndex = slots.indexOf(playerId);
+    if (currentIndex !== -1) slots[currentIndex] = null; // release any slot I already held
+    if (slot !== currentIndex) slots[slot] = playerId; // re-clicking my own slot just releases it
+
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('amida_begin', () => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room || !room.amida || room.amida.phase !== 'picking') return;
+    const { slots, labels } = room.amida;
+    if (slots.some((s) => s === null)) return;
+
+    const columns = slots.slice();
     const { rows, rungs } = buildAmidaLadder(columns.length);
     const resultsByPid = {};
     columns.forEach((pid, i) => {
       const endCol = traceAmidaColumn(rows, rungs, i);
-      resultsByPid[pid] = finalLabels[endCol];
+      resultsByPid[pid] = labels[endCol];
     });
 
-    room.amida = { id: Date.now() + '_' + Math.random().toString(36).slice(2, 8), labels: finalLabels, columns, rows, rungs, resultsByPid, revealed: false, revealedCols: [] };
+    room.amida.phase = 'ladder';
+    room.amida.columns = columns;
+    room.amida.rows = rows;
+    room.amida.rungs = rungs;
+    room.amida.resultsByPid = resultsByPid;
+    room.amida.revealed = false;
+    room.amida.revealedCols = [];
     room.updatedAt = Date.now();
     broadcast(joinedCode);
   });
@@ -210,7 +258,7 @@ io.on('connection', (socket) => {
   socket.on('amida_reveal', () => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (!room || !room.amida) return;
+    if (!room || !room.amida || room.amida.phase !== 'ladder') return;
     room.amida.revealed = true;
     room.updatedAt = Date.now();
     broadcast(joinedCode);
@@ -219,7 +267,7 @@ io.on('connection', (socket) => {
   socket.on('amida_trace', ({ col }) => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (!room || !room.amida || !room.amida.revealed) return;
+    if (!room || !room.amida || room.amida.phase !== 'ladder' || !room.amida.revealed) return;
     col = Number(col);
     if (!Number.isInteger(col) || col < 0 || col >= room.amida.columns.length) return;
     if (!room.amida.revealedCols.includes(col)) {
@@ -232,7 +280,7 @@ io.on('connection', (socket) => {
   socket.on('amida_reveal_all', () => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (!room || !room.amida || !room.amida.revealed) return;
+    if (!room || !room.amida || room.amida.phase !== 'ladder' || !room.amida.revealed) return;
     room.amida.revealedCols = room.amida.columns.map((_, i) => i);
     room.updatedAt = Date.now();
     broadcast(joinedCode);
