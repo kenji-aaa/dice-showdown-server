@@ -234,14 +234,15 @@ io.on('connection', (socket) => {
     broadcast(joinedCode);
   });
 
-  socket.on('amida_setup', ({ slotCount }) => {
+  socket.on('amida_setup', () => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
     if (room && hostOf(room) !== playerId) return;
     if (!room) return;
 
-    slotCount = Math.round(Number(slotCount));
-    if (!Number.isInteger(slotCount) || slotCount < 2 || slotCount > 30) return;
+    // One lane per person currently in the room.
+    const slotCount = Math.min(30, room.players.length);
+    if (slotCount < 2) return;
 
     room.amida = {
       id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),

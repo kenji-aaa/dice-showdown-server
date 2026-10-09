@@ -323,9 +323,8 @@
 
       <div id="amida-game" hidden>
         <div id="amida-setup">
-          <label for="amida-slot-count">参加人数</label>
-          <input type="text" inputmode="numeric" id="amida-slot-count" style="max-width:100px; margin-bottom:0.8rem;" value="2">
-          <div class="footnote" style="margin: 0 0 0.8rem;">「当たり」1人＋「はずれ」で振り分けます。</div>
+          <div class="amida-hint big" id="amida-count-note" style="margin-bottom:0.4rem;"></div>
+          <div class="footnote" style="margin: 0 0 0.8rem;">いまの部屋の人数ぶんのラダーを作ります。「当たり」1人＋「はずれ」で振り分けます。</div>
           <button class="primary" id="amida-start-btn">ラダーを作る</button>
           <div class="err" id="amida-err"></div>
         </div>
@@ -444,7 +443,7 @@
   var diceGameDiv = document.getElementById('dice-game');
   var amidaGameDiv = document.getElementById('amida-game');
   var amidaSetupDiv = document.getElementById('amida-setup');
-  var amidaSlotCountInput = document.getElementById('amida-slot-count');
+  var amidaCountNote = document.getElementById('amida-count-note');
   var amidaStartBtn = document.getElementById('amida-start-btn');
   var amidaErr = document.getElementById('amida-err');
   var amidaBanner = document.getElementById('amida-banner');
@@ -473,7 +472,6 @@
   var amidaAnimating = false;
   var amidaAnimId = null;
   var amidaIntroPlayed = false;
-  var amidaSlotCountInitialized = false;
 
   nameInput.value = localStorage.getItem('dice_name') || '';
 
@@ -587,7 +585,7 @@
     if (!latestData) return;
 
     var game = latestData.game || 'dice';
-    if (latestData.hostId === playerId) { rouletteExcludeCb.disabled = false; rouletteSpinBtn.hidden = false; amidaSlotCountInput.disabled = false; amidaStartBtn.hidden = false; if (amidaErr.textContent.indexOf('部屋主') === 0) amidaErr.textContent = ''; }
+    if (latestData.hostId === playerId) { rouletteExcludeCb.disabled = false; rouletteSpinBtn.hidden = false; amidaStartBtn.hidden = false; if (amidaErr.textContent.indexOf('部屋主') === 0) amidaErr.textContent = ''; }
     tabDice.classList.toggle('active', game === 'dice');
     tabAmida.classList.toggle('active', game === 'amida');
     diceGameDiv.hidden = game !== 'dice';
@@ -619,7 +617,6 @@
     rouletteExcludeCb.disabled = true;
     if (!latestData.amida) {
       amidaSetupDiv.hidden = false;
-      amidaSlotCountInput.disabled = true;
       amidaStartBtn.hidden = true;
       amidaErr.textContent = '部屋主があみだくじを始めるのを待っています…';
     }
@@ -990,9 +987,11 @@
     if (!amida) {
       stopAmidaAnim();
       amidaSessionId = null;
-      if (!amidaSlotCountInitialized) {
-        amidaSlotCountInitialized = true;
-        amidaSlotCountInput.value = String(Math.max(2, (latestData.players || []).length));
+      var count = (latestData.players || []).length;
+      amidaCountNote.textContent = count + '人でラダーを作ります';
+      amidaStartBtn.disabled = count < 2;
+      if (latestData.hostId === playerId) {
+        amidaErr.textContent = count < 2 ? 'あみだくじは2人以上で遊べます。参加者を待ってください。' : '';
       }
       return;
     }
@@ -1316,13 +1315,8 @@
 
   amidaStartBtn.addEventListener('click', function () {
     if (!isConnected) { amidaErr.textContent = '接続が切れています。'; return; }
-    var slotCount = Math.round(Number(amidaSlotCountInput.value));
-    if (!slotCount || slotCount < 2 || slotCount > 30) {
-      amidaErr.textContent = '参加人数は2〜30人で入力してください。';
-      return;
-    }
     amidaErr.textContent = '';
-    socket.emit('amida_setup', { slotCount: slotCount });
+    socket.emit('amida_setup');
   });
 
   amidaNamesRow.addEventListener('click', function (e) {
