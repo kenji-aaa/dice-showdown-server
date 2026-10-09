@@ -241,6 +241,8 @@
   .amida-scroll.climbing .amida-rung[style*="stroke:"] { opacity: 0.35; }
   .amida-scroll.climbing { background: radial-gradient(ellipse at 50% 50%, rgba(255,190,40,0.10), transparent 70%); }
   #amida-outcomes > div { cursor: default; }
+  .room-game-name { font-family: "Zen Maru Gothic", sans-serif; font-size: 20px; font-weight: 700; margin-bottom: 0.5rem; }
+  .host-note { text-align: center; font-size: 12px; color: var(--ink-secondary); margin-bottom: 0.9rem; }
   .wrap.wide { max-width: 1040px; }
   .wrap.wide .amida-scroll { display: flex; flex-direction: column; align-items: center; }
   .wrap.wide .amida-results { max-width: 560px; margin-left: auto; margin-right: auto; width: 100%; }
@@ -265,10 +267,18 @@
         <label for="name-input">あなたの名前</label>
         <input type="text" id="name-input" maxlength="16" placeholder="例）けんじ" autocomplete="off">
       </div>
+      <div>
+        <label>遊ぶゲーム（部屋を作る人が決めます）</label>
+        <div class="game-tabs" id="entry-games" style="margin-bottom:0;">
+          <button class="game-tab" type="button" data-game="dice">🎲 ダイス対決</button>
+          <button class="game-tab" type="button" data-game="amida">🪜 あみだくじ</button>
+          <button class="game-tab" type="button" data-game="roulette">🎡 ルーレット</button>
+        </div>
+      </div>
       <button class="primary" id="create-btn">部屋を作る</button>
       <div class="divider">または</div>
       <div>
-        <label for="code-input">合言葉（部屋コード）</label>
+        <label for="code-input">合言葉（部屋コード）— 参加する人はゲームを選ばなくてOK</label>
         <input type="text" id="code-input" class="code-input" maxlength="4" placeholder="ABCD" autocomplete="off">
       </div>
       <button class="ghost" id="join-btn">この部屋に入る</button>
@@ -278,6 +288,7 @@
 
   <section id="room" class="card" hidden>
     <div class="header">
+      <div class="room-game-name" id="room-game-name"></div>
       <p style="margin:0 0 0.4rem;">合言葉を友達に伝えよう</p>
       <div class="room-code-row">
         <span class="room-code" id="room-code-display">----</span>
@@ -286,7 +297,8 @@
       <button class="leave-link" id="leave-btn" type="button">退出する</button>
     </div>
     <div class="body">
-      <div class="game-tabs">
+      <div class="host-note" id="host-note"></div>
+      <div class="game-tabs" hidden>
         <button class="game-tab" id="tab-dice" data-game="dice" type="button">🎲 ダイス対決</button>
         <button class="game-tab" id="tab-amida" data-game="amida" type="button">🪜 あみだくじ</button>
         <button class="game-tab" id="tab-roulette" data-game="roulette" type="button">🎡 ルーレット</button>
@@ -493,7 +505,7 @@
     if (desired) {
       socket.emit('join_room', { code: desired.code, name: desired.name, pid: playerId });
     } else if (pendingCreateName) {
-      socket.emit('create_room', { name: pendingCreateName, pid: playerId });
+      socket.emit('create_room', { name: pendingCreateName, pid: playerId, game: chosenGame });
     }
   });
 
@@ -574,6 +586,7 @@
     if (!latestData) return;
 
     var game = latestData.game || 'dice';
+    if (latestData.hostId === playerId) { rouletteExcludeCb.disabled = false; rouletteSpinBtn.hidden = false; amidaSlotCountInput.disabled = false; amidaStartBtn.hidden = false; if (amidaErr.textContent.indexOf('部屋主') === 0) amidaErr.textContent = ''; }
     tabDice.classList.toggle('active', game === 'dice');
     tabAmida.classList.toggle('active', game === 'amida');
     diceGameDiv.hidden = game !== 'dice';
@@ -581,10 +594,33 @@
     tabRoulette.classList.toggle('active', game === 'roulette');
     rouletteGameDiv.hidden = game !== 'roulette';
     document.querySelector('.wrap').classList.toggle('wide', game === 'amida');
+    roomGameNameEl.textContent = GAME_LABELS[game] || '';
 
     renderDice();
     renderAmida();
     renderRoulette();
+    applyHostGating();
+  }
+
+  // Starting / announcing / resetting is the room owner's job; everyone
+  // else only does their own part (roll, pick a lane, draw a rung).
+  function applyHostGating() {
+    var hostId = latestData.hostId;
+    var isHost = hostId === playerId;
+    var host = (latestData.players || []).find(function (p) { return p.id === hostId; });
+    var hostName = host ? host.name : '';
+    document.getElementById('host-note').textContent = isHost
+      ? '👑 あなたが部屋主です（開始・発表などの進行はあなただけが操作できます）'
+      : '👑 部屋主: ' + hostName + '（開始・発表などの進行は部屋主だけが操作できます）';
+    if (isHost) return;
+    [nextRoundBtn, amidaBeginBtn, amidaRevealBtn, amidaCancelBtn, amidaAgainBtn, rouletteSpinBtn, rouletteClearBtn].forEach(function (b) { b.hidden = true; });
+    rouletteExcludeCb.disabled = true;
+    if (!latestData.amida) {
+      amidaSetupDiv.hidden = false;
+      amidaSlotCountInput.disabled = true;
+      amidaStartBtn.hidden = true;
+      amidaErr.textContent = '部屋主があみだくじを始めるのを待っています…';
+    }
   }
 
   function renderDice() {
@@ -1011,9 +1047,6 @@
     amidaAgainBtn.hidden = !finished;
   }
 
-  tabDice.addEventListener('click', function () {
-    if (isConnected) socket.emit('switch_game', { game: 'dice' });
-  });
 
   var confettiCanvas = document.getElementById('confetti-canvas');
   var confettiRunning = false;
@@ -1264,9 +1297,6 @@
     }
   }
 
-  tabRoulette.addEventListener('click', function () {
-    if (isConnected) socket.emit('switch_game', { game: 'roulette' });
-  });
   rouletteSpinBtn.addEventListener('click', function () {
     if (isConnected && !rouletteAnimating) socket.emit('roulette_spin');
   });
@@ -1277,9 +1307,6 @@
     if (isConnected) socket.emit('roulette_exclude', { value: rouletteExcludeCb.checked });
   });
 
-  tabAmida.addEventListener('click', function () {
-    if (isConnected) socket.emit('switch_game', { game: 'amida' });
-  });
 
   window.addEventListener('resize', function () {
     if (latestData && latestData.amida && !amidaAnimating) renderAmida();
@@ -1335,6 +1362,24 @@
     if (isConnected) socket.emit('amida_reset');
   });
 
+  var chosenGame = localStorage.getItem('dice_game') || 'dice';
+  var entryGamesEl = document.getElementById('entry-games');
+  var roomGameNameEl = document.getElementById('room-game-name');
+  var GAME_LABELS = { dice: '🎲 ダイス対決', amida: '🪜 あみだくじ', roulette: '🎡 ルーレット' };
+  function paintEntryGames() {
+    Array.prototype.forEach.call(entryGamesEl.children, function (b) {
+      b.classList.toggle('active', b.getAttribute('data-game') === chosenGame);
+    });
+  }
+  entryGamesEl.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-game]');
+    if (!b) return;
+    chosenGame = b.getAttribute('data-game');
+    try { localStorage.setItem('dice_game', chosenGame); } catch (err) {}
+    paintEntryGames();
+  });
+  paintEntryGames();
+
   createBtn.addEventListener('click', function () {
     var name = nameInput.value.trim();
     if (!name) { setErr('名前を入力してください。'); return; }
@@ -1343,7 +1388,7 @@
     createBtn.disabled = true;
     desired = null;
     pendingCreateName = name;
-    socket.emit('create_room', { name: name, pid: playerId });
+    socket.emit('create_room', { name: name, pid: playerId, game: chosenGame });
   });
 
   joinBtn.addEventListener('click', function () {
