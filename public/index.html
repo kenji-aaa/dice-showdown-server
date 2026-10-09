@@ -219,6 +219,27 @@
   .roulette-opt { display: flex; align-items: center; gap: 0.5rem; font-size: 13px; color: var(--ink-secondary); margin: 0.4rem 0 0.2rem; cursor: pointer; }
   .roulette-opt input { width: 16px; height: 16px; }
   .roulette-won { font-size: 12px; color: var(--ink-secondary); margin-bottom: 0.8rem; min-height: 1em; }
+
+  .amida-hint { text-align: center; font-size: 13px; color: var(--ink-secondary); margin-bottom: 0.6rem; min-height: 1.4em; }
+  .amida-hint.big { font-family: "Zen Maru Gothic", sans-serif; font-size: 18px; font-weight: 700; color: var(--accent); }
+  .amida-row > div.open { color: var(--accent); font-weight: 700; cursor: pointer; border: 1px dashed var(--accent); border-radius: 8px; }
+  .amida-row > div.taken { font-weight: 700; }
+  .amida-row > div.mine { font-weight: 700; text-decoration: underline; cursor: pointer; }
+  .amida-row > div.atari { color: var(--accent); font-weight: 700; font-size: 13px; }
+  .amida-row > div.spot { color: var(--accent); font-weight: 700; font-size: 14px; animation: spot-pulse 0.7s ease-in-out infinite alternate; }
+  @keyframes spot-pulse { from { transform: scale(1); text-shadow: 0 0 0 rgba(255,190,40,0); } to { transform: scale(1.25); text-shadow: 0 0 12px rgba(255,190,40,0.95); } }
+  .amida-row > div.win-pop { color: var(--accent); font-weight: 700; animation: win-pop 0.9s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes win-pop { 0% { transform: scale(1); } 40% { transform: scale(1.6); } 100% { transform: scale(1.15); } }
+  .amida-row > div.blink { animation: name-blink 0.3s steps(2) infinite; }
+  @keyframes name-blink { 50% { opacity: 0.2; } }
+  .amida-rung { stroke: var(--ink-secondary); stroke-width: 3; opacity: 0.55; stroke-linecap: round; }
+  .amida-rung-new { animation: rung-in 0.6s ease both; }
+  @keyframes rung-in { from { opacity: 0; } to { opacity: 0.55; } }
+  #amida-svg { cursor: crosshair; }
+  .amida-scroll.climbing .amida-line, .amida-scroll.climbing .amida-rung { opacity: 0.18; }
+  .amida-scroll.climbing .amida-rung[style*="stroke:"] { opacity: 0.35; }
+  .amida-scroll.climbing { background: radial-gradient(ellipse at 50% 50%, rgba(255,190,40,0.10), transparent 70%); }
+  #amida-outcomes > div { cursor: default; }
   [hidden] { display: none !important; }
   @media (prefers-reduced-motion: reduce) {
     .big-die.spinning, .big-die.landed, .die:not(.empty) { animation: none; }
@@ -286,29 +307,23 @@
           <label for="amida-slot-count">参加人数</label>
           <input type="text" inputmode="numeric" id="amida-slot-count" style="max-width:100px; margin-bottom:0.8rem;" value="2">
           <div class="footnote" style="margin: 0 0 0.8rem;">「当たり」1人＋「はずれ」で振り分けます。</div>
-          <button class="primary" id="amida-start-btn">スタート位置を選ぶ</button>
+          <button class="primary" id="amida-start-btn">ラダーを作る</button>
           <div class="err" id="amida-err"></div>
         </div>
-        <div id="amida-picking" hidden>
-          <div class="footnote" style="margin-bottom:0.6rem;">好きなスタート位置をタップしてください。もう一度タップすると取り消せます。</div>
-          <div class="amida-slots" id="amida-slots"></div>
-          <div class="status-line" id="amida-picking-status"></div>
-          <div class="actions">
-            <button class="primary" id="amida-begin-btn" disabled>あみだくじスタート</button>
-            <button class="ghost" id="amida-cancel-btn">やめる</button>
-          </div>
-        </div>
-        <div id="amida-ladder-wrap" hidden>
-          <div class="amida-scroll">
+        <div id="amida-board-wrap" hidden>
+          <div class="amida-hint" id="amida-hint"></div>
+          <div class="amida-scroll" id="amida-scroll">
             <div class="amida-row" id="amida-names"></div>
             <svg id="amida-svg"></svg>
             <div class="amida-row" id="amida-outcomes"></div>
           </div>
+          <div class="status-line" id="amida-picking-status"></div>
           <div class="amida-results" id="amida-results"></div>
           <div class="actions">
-            <button class="primary" id="amida-reveal-btn">結果を見る</button>
-            <button class="ghost" id="amida-reveal-all-btn" hidden>全員の結果を見る</button>
-            <button class="ghost" id="amida-again-btn" hidden>もう一度くじを作る</button>
+            <button class="primary" id="amida-begin-btn" disabled>ラダー完成！スタート</button>
+            <button class="primary" id="amida-reveal-btn" hidden>🎯 当たり発表</button>
+            <button class="ghost" id="amida-cancel-btn">やめる</button>
+            <button class="ghost" id="amida-again-btn" hidden>もう一度</button>
           </div>
           <div class="err" id="amida-run-err"></div>
         </div>
@@ -413,36 +428,30 @@
   var amidaSlotCountInput = document.getElementById('amida-slot-count');
   var amidaStartBtn = document.getElementById('amida-start-btn');
   var amidaErr = document.getElementById('amida-err');
-  var amidaPickingDiv = document.getElementById('amida-picking');
-  var amidaSlotsDiv = document.getElementById('amida-slots');
-  var amidaPickingStatus = document.getElementById('amida-picking-status');
-  var amidaBeginBtn = document.getElementById('amida-begin-btn');
-  var amidaCancelBtn = document.getElementById('amida-cancel-btn');
   var amidaBanner = document.getElementById('amida-banner');
-  var amidaLadderWrap = document.getElementById('amida-ladder-wrap');
+  var amidaBoardWrap = document.getElementById('amida-board-wrap');
+  var amidaHint = document.getElementById('amida-hint');
+  var amidaScrollEl = document.getElementById('amida-scroll');
   var amidaNamesRow = document.getElementById('amida-names');
   var amidaSvg = document.getElementById('amida-svg');
   var amidaOutcomesRow = document.getElementById('amida-outcomes');
+  var amidaPickingStatus = document.getElementById('amida-picking-status');
   var amidaResultsDiv = document.getElementById('amida-results');
+  var amidaBeginBtn = document.getElementById('amida-begin-btn');
   var amidaRevealBtn = document.getElementById('amida-reveal-btn');
-  var amidaRevealAllBtn = document.getElementById('amida-reveal-all-btn');
+  var amidaCancelBtn = document.getElementById('amida-cancel-btn');
   var amidaAgainBtn = document.getElementById('amida-again-btn');
   var amidaRunErr = document.getElementById('amida-run-err');
 
   var AMIDA_COLORS = ['#c1440e', '#1d6fa5', '#8a5cb5', '#c2185b', '#2e8b57', '#b8860b', '#5c6bc0', '#00838f'];
   var AMIDA_COL_WIDTH = 56;
   var AMIDA_MARGIN_Y = 10;
-  var amidaHighlightCol = null;
-  // Local-only "have we actually shown this on screen yet" state, so a
-  // player's result only appears once their trace animation has played —
-  // even though the server already told us the moment it was traced.
+  var AMIDA_ROW_H = 14;
   var amidaSessionId = null;
-  var amidaKnownRevealed = {};
-  var amidaAnimQueue = [];
-  var amidaAnimatingCol = null;
-  var amidaRowHeight = 10;
-  var amidaBaseLayer = null;
-  var amidaHighlightLayerEl = null;
+  var amidaRevealSeen = null;
+  var amidaAnimating = false;
+  var amidaAnimId = null;
+  var amidaIntroPlayed = false;
   var amidaSlotCountInitialized = false;
 
   nameInput.value = localStorage.getItem('dice_name') || '';
@@ -717,229 +726,268 @@
     amidaBannerTimer = { hide: hide, finish: finish };
   }
 
-  function ensureAmidaLayers() {
-    if (amidaBaseLayer && amidaBaseLayer.ownerSVGElement === amidaSvg) return;
-    amidaSvg.innerHTML = '';
-    amidaBaseLayer = svgEl('g');
-    amidaHighlightLayerEl = svgEl('g');
-    amidaSvg.appendChild(amidaBaseLayer);
-    amidaSvg.appendChild(amidaHighlightLayerEl);
-  }
+  function amidaSlotColor(i) { return AMIDA_COLORS[i % AMIDA_COLORS.length]; }
+  function amidaCols(amida) { return amida.phase === 'picking' ? amida.slots : amida.columns; }
 
-  function drawAmidaStaticHighlight(amida, col) {
-    amidaHighlightLayerEl.innerHTML = '';
-    if (col === null) return;
-    var points = amidaPathPoints(amida.rows, amida.rungs, col);
-    var d = amidaPathD(points, AMIDA_COL_WIDTH, amidaRowHeight, AMIDA_MARGIN_Y);
-    var path = svgEl('path');
-    path.setAttribute('class', 'amida-path');
-    path.setAttribute('d', d);
-    path.setAttribute('stroke', AMIDA_COLORS[col % AMIDA_COLORS.length]);
-    amidaHighlightLayerEl.appendChild(path);
-  }
-
-  function playAmidaTrace(amida, col) {
-    amidaAnimatingCol = col;
-    var points = amidaPathPoints(amida.rows, amida.rungs, col).slice().reverse();
-    var d = amidaPathD(points, AMIDA_COL_WIDTH, amidaRowHeight, AMIDA_MARGIN_Y);
-    var color = AMIDA_COLORS[col % AMIDA_COLORS.length];
-    var duration = Math.min(4000, Math.max(1200, amida.rows * 35));
-
-    var path = svgEl('path');
-    path.setAttribute('class', 'amida-path');
-    path.setAttribute('pathLength', '1');
-    path.setAttribute('d', d);
-    path.setAttribute('stroke', color);
-    path.style.strokeDasharray = '1';
-    path.style.strokeDashoffset = '1';
-    path.style.transition = 'stroke-dashoffset ' + duration + 'ms linear';
-
-    amidaHighlightLayerEl.innerHTML = '';
-    amidaHighlightLayerEl.appendChild(path);
-
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () {
-        path.style.strokeDashoffset = '0';
-      });
-    });
-
-    setTimeout(function () {
-      amidaKnownRevealed[col] = true;
-      amidaAnimatingCol = null;
-      amidaHighlightCol = col;
-      render();
-
-      var pid = amida.columns[col];
-      var label = (amida.resultsByPid[pid] || '').trim();
-      if (label === '当たり') {
-        playAtariChime();
-        showAmidaBanner('🎉 ' + nameForPid(pid) + ' が当たり！');
-      } else {
-        playHazureBlip();
-      }
-      var row = amidaResultsDiv.querySelector('.amida-result-row[data-col="' + col + '"]');
-      if (row) {
-        row.classList.remove('impact');
-        void row.offsetWidth; // restart the animation even if it played before
-        row.classList.add('impact');
-      }
-
-      processAmidaQueue();
-    }, duration + 150);
-  }
-
-  function processAmidaQueue() {
-    if (amidaAnimatingCol !== null || amidaAnimQueue.length === 0) return;
-    var col = amidaAnimQueue.shift();
-    if (amidaKnownRevealed[col]) { processAmidaQueue(); return; }
-    var amida = latestData.amida;
-    if (!amida) return;
-    playAmidaTrace(amida, col);
-  }
-
-  function requestAmidaTrace(col) {
-    var amida = latestData.amida;
-    if (!amida || !amida.revealed) return;
-    if (amidaKnownRevealed[col]) {
-      amidaHighlightCol = (amidaHighlightCol === col) ? null : col;
-      render();
-      return;
+  function drawAmidaBoard(amida, intro) {
+    var picking = amida.phase === 'picking';
+    var cols = amidaCols(amida);
+    var n = cols.length;
+    var w = n * AMIDA_COL_WIDTH;
+    var hgt = AMIDA_MARGIN_Y * 2 + amida.rows * AMIDA_ROW_H;
+    amidaSvg.setAttribute('viewBox', '0 0 ' + w + ' ' + hgt);
+    amidaSvg.setAttribute('width', w);
+    amidaSvg.setAttribute('height', hgt);
+    var html = '';
+    for (var i = 0; i < n; i++) {
+      var x = i * AMIDA_COL_WIDTH + AMIDA_COL_WIDTH / 2;
+      html += '<line class="amida-line" style="stroke-width:3" x1="' + x + '" y1="' + AMIDA_MARGIN_Y + '" x2="' + x + '" y2="' + (AMIDA_MARGIN_Y + amida.rows * AMIDA_ROW_H) + '"></line>';
     }
-    if (amidaAnimQueue.indexOf(col) !== -1 || amidaAnimatingCol === col) return;
-    if (!isConnected) { amidaRunErr.textContent = '接続が切れています。'; return; }
-    socket.emit('amida_trace', { col: col });
+    (amida.rungs || []).forEach(function (rg) {
+      var y = AMIDA_MARGIN_Y + rg.row * AMIDA_ROW_H + AMIDA_ROW_H / 2;
+      var x1 = rg.col * AMIDA_COL_WIDTH + AMIDA_COL_WIDTH / 2;
+      var x2 = (rg.col + 1) * AMIDA_COL_WIDTH + AMIDA_COL_WIDTH / 2;
+      var byIdx = rg.by ? cols.indexOf(rg.by) : -1;
+      var isNew = !picking && !rg.by && intro;
+      var style = '';
+      if (byIdx >= 0) style += 'stroke:' + amidaSlotColor(byIdx) + ';stroke-width:6;opacity:1;';
+      if (isNew) style += 'animation-delay:' + Math.round(rg.row * 28) + 'ms;';
+      html += '<line class="amida-rung' + (isNew ? ' amida-rung-new' : '') + '" style="' + style + '" x1="' + x1 + '" y1="' + y + '" x2="' + x2 + '" y2="' + y + '"></line>';
+    });
+    html += '<g id="amida-hl"></g>';
+    amidaSvg.innerHTML = html;
   }
 
-  function renderAmidaPicking(amida) {
-    var players = latestData.players || [];
-    var takenCount = amida.slots.filter(function (s) { return s !== null; }).length;
-
-    amidaSlotsDiv.innerHTML = amida.slots.map(function (pid, i) {
-      var isMine = pid === playerId;
-      var isTaken = pid !== null;
-      var cls = 'amida-slot' + (isTaken ? ' taken' : '') + (isMine ? ' mine' : '') + (isTaken && !isMine ? ' blocked' : '');
-      var who = isTaken ? escapeHtml(nameForPid(pid)) : '空き';
-      return '<div class="' + cls + '" data-slot="' + i + '">' +
-        '<span class="num">位置' + (i + 1) + '</span>' +
-        '<span class="who">' + who + '</span>' +
-        '</div>';
+  function drawAmidaNames(amida, popCol) {
+    var picking = amida.phase === 'picking';
+    amidaNamesRow.innerHTML = amidaCols(amida).map(function (pid, i) {
+      if (picking) {
+        if (pid === null) return '<div class="open" data-slot="' + i + '">＋選ぶ</div>';
+        return '<div class="' + (pid === playerId ? 'mine' : 'taken') + '" data-slot="' + i + '" style="color:' + amidaSlotColor(i) + '">' + escapeHtml(nameForPid(pid)) + '</div>';
+      }
+      return '<div class="' + (pid === playerId ? 'mine ' : '') + (popCol === i ? 'win-pop' : '') + '" data-col="' + i + '">' + escapeHtml(nameForPid(pid)) + '</div>';
     }).join('');
-
-    amidaPickingStatus.textContent = takenCount + ' / ' + amida.slotCount + '人が選択済み';
-    amidaBeginBtn.disabled = takenCount !== amida.slotCount;
   }
 
-  function renderAmida() {
+  function drawAmidaOutcomes(amida, mode) {
+    var n = amidaCols(amida).length;
+    var html = '';
+    for (var i = 0; i < n; i++) {
+      if (amida.phase === 'picking') { html += '<div></div>'; continue; }
+      if (mode === 'all') {
+        var label = amida.labels[i];
+        html += '<div class="' + (label === '当たり' ? 'atari' : '') + '">' + escapeHtml(label) + '</div>';
+      } else if (mode === 'atari' && i === amida.atariSlot) {
+        html += '<div class="spot">当たり</div>';
+      } else {
+        html += '<div>？</div>';
+      }
+    }
+    amidaOutcomesRow.innerHTML = html;
+  }
+
+  function amidaPixelPoints(amida, col) {
+    return amidaPathPoints(amida.rows, amida.rungs, col).map(function (pt) {
+      return { x: pt.x * AMIDA_COL_WIDTH + AMIDA_COL_WIDTH / 2, y: AMIDA_MARGIN_Y + pt.y * AMIDA_ROW_H };
+    });
+  }
+
+  function drawAmidaFinalPath(amida) {
+    var hl = amidaSvg.querySelector('#amida-hl');
+    if (!hl) return;
+    var pts = amidaPixelPoints(amida, amida.winnerCol);
+    var path = svgEl('path');
+    path.setAttribute('class', 'amida-path');
+    path.setAttribute('d', pts.map(function (p, i) { return (i === 0 ? 'M' : 'L') + p.x + ',' + p.y; }).join(' '));
+    path.setAttribute('stroke', '#ffb400');
+    path.style.strokeWidth = '5';
+    hl.appendChild(path);
+  }
+
+  function stopAmidaAnim() {
+    if (amidaAnimId) cancelAnimationFrame(amidaAnimId);
+    amidaAnimId = null;
+    amidaAnimating = false;
+    amidaScrollEl.classList.remove('climbing');
+  }
+
+  // The "当たり発表": a glowing marker climbs the ladder from the 当たり slot
+  // at the bottom, slowly, and only the top of the line says who it is.
+  function playAmidaReveal(amida) {
+    amidaAnimating = true;
+    amidaScrollEl.classList.add('climbing');
+    drawAmidaBoard(amida, false);
+    drawAmidaNames(amida, null);
+    drawAmidaOutcomes(amida, 'atari');
+    amidaResultsDiv.innerHTML = '';
+    amidaRevealBtn.hidden = true;
+    amidaAgainBtn.hidden = true;
+    amidaCancelBtn.hidden = true;
+    amidaPickingStatus.textContent = '';
+    amidaHint.className = 'amida-hint big';
+    amidaHint.textContent = '当たりは誰だ…？';
+
+    var hl = amidaSvg.querySelector('#amida-hl');
+    var pts = amidaPixelPoints(amida, amida.winnerCol).slice().reverse();
+    var cum = [0];
+    for (var i = 1; i < pts.length; i++) {
+      cum.push(cum[i - 1] + Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y));
+    }
+    var total = cum[cum.length - 1];
+    var horiz = [];
+    for (var j = 0; j < pts.length - 1; j++) {
+      if (pts[j].x !== pts[j + 1].x) horiz.push(cum[j]);
+    }
+
+    var path = svgEl('path');
+    path.setAttribute('class', 'amida-path');
+    path.setAttribute('d', pts.map(function (p, k) { return (k === 0 ? 'M' : 'L') + p.x + ',' + p.y; }).join(' '));
+    path.setAttribute('stroke', '#ffb400');
+    path.style.strokeWidth = '6';
+    path.style.strokeDasharray = total + ' ' + total;
+    path.style.strokeDashoffset = String(total);
+    var halo = svgEl('circle');
+    halo.setAttribute('r', '16');
+    halo.setAttribute('fill', 'rgba(255,190,40,0.35)');
+    var head = svgEl('circle');
+    head.setAttribute('r', '8');
+    head.setAttribute('fill', '#fff7d6');
+    head.setAttribute('stroke', '#ffb400');
+    head.setAttribute('stroke-width', '3');
+    hl.appendChild(path);
+    hl.appendChild(halo);
+    hl.appendChild(head);
+
+    function pointAt(len) {
+      for (var s = 1; s < cum.length; s++) {
+        if (len <= cum[s]) {
+          var segLen = cum[s] - cum[s - 1] || 1;
+          var u = (len - cum[s - 1]) / segLen;
+          return { x: pts[s - 1].x + (pts[s].x - pts[s - 1].x) * u, y: pts[s - 1].y + (pts[s].y - pts[s - 1].y) * u };
+        }
+      }
+      return pts[pts.length - 1];
+    }
+
+    var dur = amida.revealMs || 10000;
+    var startT = performance.now();
+    var tickIdx = 0;
+    var lastBeat = 0;
+
+    function frame(now) {
+      var t = Math.min(1, (now - startT) / dur);
+      var f = t < 0.7 ? (t / 0.7) * 0.78 : 0.78 + 0.22 * (1 - Math.pow(1 - (t - 0.7) / 0.3, 3));
+      var len = total * f;
+      path.style.strokeDashoffset = String(total - len);
+      var p = pointAt(len);
+      halo.setAttribute('cx', p.x); halo.setAttribute('cy', p.y);
+      head.setAttribute('cx', p.x); head.setAttribute('cy', p.y);
+      halo.setAttribute('r', String(14 + 4 * Math.sin(now / 90)));
+
+      while (tickIdx < horiz.length && horiz[tickIdx] <= len) {
+        playAmidaTones([420 + 520 * f], 0.03);
+        tickIdx++;
+      }
+      if (now - lastBeat > 650 - 400 * f) {
+        lastBeat = now;
+        playAmidaTones([70 + 50 * f], 0.09);
+      }
+
+      var svgTop = amidaSvg.getBoundingClientRect().top + window.scrollY;
+      var target = svgTop + p.y - window.innerHeight * 0.55;
+      window.scrollTo(0, window.scrollY + (target - window.scrollY) * 0.12);
+
+      if (t < 1) {
+        amidaAnimId = requestAnimationFrame(frame);
+        return;
+      }
+      amidaAnimId = null;
+      var nameCells = amidaNamesRow.children;
+      if (nameCells[amida.winnerCol]) nameCells[amida.winnerCol].classList.add('blink');
+      amidaHint.textContent = '……！';
+      setTimeout(function () { finishAmidaReveal(amida); }, 900);
+    }
+    amidaAnimId = requestAnimationFrame(frame);
+  }
+
+  function finishAmidaReveal(amida) {
+    var winnerName = nameForPid(amida.columns[amida.winnerCol]);
+    amidaAnimating = false;
+    amidaScrollEl.classList.remove('climbing');
+    renderAmida(amida.winnerCol);
+    playFanfare();
+    flashScreen();
+    launchConfetti(4600);
+    amidaBanner.classList.add('big');
+    showAmidaBanner('🎉 ' + winnerName + ' が当たり！');
+    setTimeout(function () { amidaBanner.classList.remove('big'); }, 3200);
+  }
+
+  function renderAmida(popCol) {
     var amida = latestData.amida;
     amidaSetupDiv.hidden = !!amida;
-    amidaPickingDiv.hidden = !amida || amida.phase !== 'picking';
-    amidaLadderWrap.hidden = !amida || amida.phase !== 'ladder';
+    amidaBoardWrap.hidden = !amida;
 
     if (!amida) {
+      stopAmidaAnim();
+      amidaSessionId = null;
       if (!amidaSlotCountInitialized) {
         amidaSlotCountInitialized = true;
-        var suggested = Math.max(2, (latestData.players || []).length);
-        amidaSlotCountInput.value = String(suggested);
+        amidaSlotCountInput.value = String(Math.max(2, (latestData.players || []).length));
       }
-      return;
-    }
-
-    if (amida.phase === 'picking') {
-      renderAmidaPicking(amida);
       return;
     }
 
     if (amida.id !== amidaSessionId) {
+      stopAmidaAnim();
       amidaSessionId = amida.id;
-      amidaKnownRevealed = {};
-      amidaAnimQueue = [];
-      amidaAnimatingCol = null;
-      amidaHighlightCol = null;
-      amidaBaseLayer = null; // force a fresh base-ladder draw below
-      amidaRowHeight = amida.rows > 40 ? 10 : (amida.rows > 20 ? 16 : 28);
+      amidaRevealSeen = null;
+      amidaIntroPlayed = false;
     }
 
-    var columns = amida.columns;
-    var svgWidth = columns.length * AMIDA_COL_WIDTH;
-    var svgHeight = AMIDA_MARGIN_Y * 2 + amida.rows * amidaRowHeight;
-    amidaSvg.setAttribute('viewBox', '0 0 ' + svgWidth + ' ' + svgHeight);
-    amidaSvg.setAttribute('width', svgWidth);
-    amidaSvg.setAttribute('height', svgHeight);
+    var picking = amida.phase === 'picking';
+    var revealed = !!amida.revealed;
 
-    var freshLayers = !amidaBaseLayer;
-    ensureAmidaLayers();
-
-    if (freshLayers) {
-      amidaNamesRow.innerHTML = columns.map(function (pid) {
-        return '<div class="' + (pid === playerId ? 'me' : '') + '">' + escapeHtml(nameForPid(pid)) + '</div>';
-      }).join('');
-
-      var lines = [];
-      for (var i = 0; i < columns.length; i++) {
-        var x = i * AMIDA_COL_WIDTH + AMIDA_COL_WIDTH / 2;
-        lines.push('<line class="amida-line" x1="' + x + '" y1="' + AMIDA_MARGIN_Y + '" x2="' + x + '" y2="' + (AMIDA_MARGIN_Y + amida.rows * amidaRowHeight) + '"></line>');
-      }
-      amida.rungs.forEach(function (rg) {
-        var y = AMIDA_MARGIN_Y + rg.row * amidaRowHeight + amidaRowHeight / 2;
-        var x1 = rg.col * AMIDA_COL_WIDTH + AMIDA_COL_WIDTH / 2;
-        var x2 = (rg.col + 1) * AMIDA_COL_WIDTH + AMIDA_COL_WIDTH / 2;
-        lines.push('<line class="amida-line" x1="' + x1 + '" y1="' + y + '" x2="' + x2 + '" y2="' + y + '"></line>');
-      });
-      amidaBaseLayer.innerHTML = lines.join('');
+    if (revealed && amidaRevealSeen !== amida.id && !amidaAnimating) {
+      amidaRevealSeen = amida.id;
+      if (!amida.done) { playAmidaReveal(amida); return; }
     }
+    if (amidaAnimating) return;
 
-    // Queue up anything the server says has been traced (by anyone) that
-    // we haven't actually played the reveal animation for yet. A single
-    // new column plays the suspenseful climb; several appearing at once
-    // (the "reveal everyone" button) skip straight to known — no point
-    // queueing a dozen animations back to back.
-    var newlyRevealed = amida.revealed
-      ? amida.revealedCols.filter(function (c) { return !amidaKnownRevealed[c] && amidaAnimQueue.indexOf(c) === -1 && amidaAnimatingCol !== c; })
-      : [];
-    if (newlyRevealed.length > 1) {
-      newlyRevealed.forEach(function (c) { amidaKnownRevealed[c] = true; });
-    } else if (newlyRevealed.length === 1) {
-      amidaAnimQueue.push(newlyRevealed[0]);
+    var finished = revealed && amidaRevealSeen === amida.id;
+    drawAmidaBoard(amida, !picking && !amidaIntroPlayed);
+    if (!picking) amidaIntroPlayed = true;
+    drawAmidaNames(amida, typeof popCol === 'number' ? popCol : null);
+    drawAmidaOutcomes(amida, finished ? 'all' : 'hidden');
+    if (finished) drawAmidaFinalPath(amida);
+
+    amidaResultsDiv.innerHTML = finished ? amida.columns.map(function (pid, i) {
+      var label = amida.resultsByPid[pid];
+      var atari = label === '当たり';
+      return '<div class="amida-result-row' + (pid === playerId ? ' me' : '') + (atari ? ' atari' : '') + '">' +
+        '<span class="amida-result-swatch" style="background:' + amidaSlotColor(i) + '"></span>' +
+        '<span class="amida-result-name">' + escapeHtml(nameForPid(pid)) + (pid === playerId ? '<span class="tag">あなた</span>' : '') + '</span>' +
+        '<span class="amida-result-label">' + (atari ? '🎉 ' : '') + escapeHtml(label) + '</span></div>';
+    }).join('') : '';
+
+    amidaHint.className = 'amida-hint' + (finished ? ' big' : '');
+    if (picking) {
+      var taken = amida.slots.filter(function (s) { return s !== null; }).length;
+      var mineRung = amida.rungs.filter(function (r) { return r.by === playerId; }).length;
+      amidaHint.textContent = '上の「＋選ぶ」で自分の位置を決めて、ラダーをタップすると横線を1本足せます（もう一度タップで消せます）';
+      amidaPickingStatus.textContent = taken + ' / ' + amida.slotCount + '人が位置を選択　あなたの横線: ' + mineRung + '/1本';
+      amidaBeginBtn.disabled = taken !== amida.slotCount;
+    } else if (finished) {
+      amidaHint.textContent = '🎉 当たりは ' + nameForPid(amida.columns[amida.winnerCol]) + ' さん！';
+      amidaPickingStatus.textContent = '';
+    } else {
+      amidaHint.textContent = 'ラダー完成！準備ができたら「当たり発表」を押してください';
+      amidaPickingStatus.textContent = '';
     }
-
-    if (amidaAnimatingCol === null) {
-      if (amidaAnimQueue.length > 0) {
-        processAmidaQueue();
-      } else {
-        drawAmidaStaticHighlight(amida, amidaHighlightCol);
-      }
-    }
-
-    // The bottom row is the FIXED slot at the foot of each ladder column —
-    // it never depends on whether any particular player's trace has
-    // played yet, so it can show as soon as the ladder itself is revealed.
-    amidaOutcomesRow.innerHTML = amida.labels.map(function (label) {
-      var isAtari = label.trim() === '当たり';
-      return '<div class="' + (amida.revealed && isAtari ? 'atari' : '') + '">' + (amida.revealed ? escapeHtml(label) : '？') + '</div>';
-    }).join('');
-
-    amidaResultsDiv.innerHTML = columns.map(function (pid, i) {
-      var isMe = pid === playerId;
-      var isKnown = !!amidaKnownRevealed[i];
-      var isHighlighted = amidaHighlightCol === i;
-      var label = isKnown ? amida.resultsByPid[pid] : '？';
-      var isAtari = isKnown && label.trim() === '当たり';
-      var cls = 'amida-result-row' + (amida.revealed ? ' clickable' : '') + (isMe ? ' me' : '') + (isHighlighted ? ' highlighted' : '') + (isAtari ? ' atari' : '');
-      var swatchColor = isKnown ? AMIDA_COLORS[i % AMIDA_COLORS.length] : '';
-      var style = swatchColor ? ' style="--result-color:' + swatchColor + '"' : '';
-      var swatch = '<span class="amida-result-swatch"' + (swatchColor ? ' style="background:' + swatchColor + '"' : '') + '></span>';
-      var labelText = (isAtari ? '🎉 ' : '') + label;
-      return '<div class="' + cls + '" data-col="' + i + '"' + style + '>' +
-        swatch +
-        '<span class="amida-result-name">' + escapeHtml(nameForPid(pid)) + (isMe ? '<span class="tag">あなた</span>' : '') + '</span>' +
-        '<span class="amida-result-label">' + escapeHtml(labelText) + '</span>' +
-        '</div>';
-    }).join('');
-
-    var allKnown = columns.every(function (_, i) { return amidaKnownRevealed[i]; });
-    amidaRevealBtn.hidden = amida.revealed;
-    amidaRevealAllBtn.hidden = !amida.revealed || allKnown;
-    amidaAgainBtn.hidden = !amida.revealed;
+    amidaBeginBtn.hidden = !picking;
+    amidaRevealBtn.hidden = picking || revealed;
+    amidaCancelBtn.hidden = finished;
+    amidaAgainBtn.hidden = !finished;
   }
 
   tabDice.addEventListener('click', function () {
@@ -1223,58 +1271,43 @@
     socket.emit('amida_setup', { slotCount: slotCount });
   });
 
-  amidaSlotsDiv.addEventListener('click', function (e) {
-    var el = e.target.closest('.amida-slot');
-    if (!el) return;
+  amidaNamesRow.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-slot]');
     var amida = latestData && latestData.amida;
-    if (!amida || amida.phase !== 'picking') return;
+    if (!el || !amida || amida.phase !== 'picking' || !isConnected) return;
     var idx = parseInt(el.getAttribute('data-slot'), 10);
     var heldBy = amida.slots[idx];
     if (heldBy && heldBy !== playerId) return;
-    if (!isConnected) return;
     socket.emit('amida_pick_slot', { slot: idx });
   });
 
-  amidaBeginBtn.addEventListener('click', function () {
-    if (!isConnected) return;
-    socket.emit('amida_begin');
-  });
-
-  amidaCancelBtn.addEventListener('click', function () {
-    if (!isConnected) return;
-    socket.emit('amida_reset');
-  });
-
-  amidaRevealBtn.addEventListener('click', function () {
-    if (!isConnected) { amidaRunErr.textContent = '接続が切れています。'; return; }
-    socket.emit('amida_reveal');
-  });
-
-  amidaRevealAllBtn.addEventListener('click', function () {
-    if (!isConnected) { amidaRunErr.textContent = '接続が切れています。'; return; }
-    socket.emit('amida_reveal_all');
-  });
-
-  amidaAgainBtn.addEventListener('click', function () {
-    if (!isConnected) { amidaRunErr.textContent = '接続が切れています。'; return; }
-    socket.emit('amida_reset');
-  });
-
-  amidaResultsDiv.addEventListener('click', function (e) {
-    var row = e.target.closest('.amida-result-row.clickable');
-    if (!row) return;
-    requestAmidaTrace(parseInt(row.getAttribute('data-col'), 10));
-  });
-
-  amidaOutcomesRow.addEventListener('click', function (e) {
+  amidaSvg.addEventListener('click', function (e) {
     var amida = latestData && latestData.amida;
-    if (!amida || !amida.revealed) return;
-    var cell = e.target.closest('div');
-    if (!cell || cell.parentNode !== amidaOutcomesRow) return;
-    var slotIndex = Array.prototype.indexOf.call(amidaOutcomesRow.children, cell);
-    for (var i = 0; i < amida.columns.length; i++) {
-      if (amidaEndForStart(amida.rows, amida.rungs, i) === slotIndex) { requestAmidaTrace(i); break; }
+    if (!amida || amida.phase !== 'picking' || !isConnected) return;
+    if (amida.slots.indexOf(playerId) === -1) {
+      amidaPickingStatus.textContent = 'まず上の「＋選ぶ」で自分の位置を決めてください';
+      return;
     }
+    var rect = amidaSvg.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var y = e.clientY - rect.top;
+    var col = Math.max(0, Math.min(amida.slots.length - 2, Math.round(x / AMIDA_COL_WIDTH) - 1));
+    var row = Math.floor((y - AMIDA_MARGIN_Y) / AMIDA_ROW_H);
+    if (row < 0 || row >= amida.rows) return;
+    socket.emit('amida_add_rung', { row: row, col: col });
+  });
+
+  amidaBeginBtn.addEventListener('click', function () {
+    if (isConnected) socket.emit('amida_begin');
+  });
+  amidaRevealBtn.addEventListener('click', function () {
+    if (isConnected) socket.emit('amida_reveal_winner');
+  });
+  amidaCancelBtn.addEventListener('click', function () {
+    if (isConnected) socket.emit('amida_reset');
+  });
+  amidaAgainBtn.addEventListener('click', function () {
+    if (isConnected) socket.emit('amida_reset');
   });
 
   createBtn.addEventListener('click', function () {

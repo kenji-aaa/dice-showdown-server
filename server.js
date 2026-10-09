@@ -41,11 +41,29 @@ function publicState(room) {
     players: room.players,
     rolls: room.rolls,
     activeIds: room.activeIds,
-    amida: room.amida,
+    amida: publicAmida(room.amida),
     roulette: room.roulette,
     rouletteWon: room.rouletteWon,
     rouletteExclude: room.rouletteExclude,
   };
+}
+
+function publicAmida(a) {
+  if (!a) return null;
+  if (a.phase === 'ladder' && !a.revealed) {
+    const { labels, resultsByPid, atariSlot, winnerCol, ...rest } = a;
+    return rest;
+  }
+  return a;
+}
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 function buildAmidaLadder(columnCount) {
@@ -89,6 +107,7 @@ function removePlayer(code, pid) {
   if (room.amida && room.amida.phase === 'picking') {
     const idx = room.amida.slots.indexOf(pid);
     if (idx !== -1) room.amida.slots[idx] = null;
+    room.amida.rungs = room.amida.rungs.filter((r) => r.by !== pid);
   }
   room.updatedAt = Date.now();
   if (room.players.length === 0) {
@@ -188,7 +207,7 @@ io.on('connection', (socket) => {
     broadcast(joinedCode);
   });
 
-  socket.on('amida_setup', ({ labels, slotCount }) => {
+  socket.on('amida_setup', ({ slotCount }) => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
     if (!room) return;
@@ -196,21 +215,13 @@ io.on('connection', (socket) => {
     slotCount = Math.round(Number(slotCount));
     if (!Number.isInteger(slotCount) || slotCount < 2 || slotCount > 30) return;
 
-    let finalLabels = Array.isArray(labels)
-      ? labels.map((l) => String(l || '').slice(0, 20).trim()).filter(Boolean)
-      : [];
-    if (finalLabels.length !== slotCount) {
-      // A bare "1, 2, 3..." fallback reads as meaningless once revealed —
-      // default to the standard single-winner amidakuji instead.
-      finalLabels = Array.from({ length: slotCount }, (_, i) => (i === 0 ? '当たり' : 'はずれ'));
-    }
-
     room.amida = {
       id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
       phase: 'picking',
-      labels: finalLabels,
       slotCount,
+      rows: Math.max(40, Math.min(90, slotCount * 10)),
       slots: new Array(slotCount).fill(null),
+      rungs: [],
     };
     room.updatedAt = Date.now();
     broadcast(joinedCode);
@@ -224,11 +235,37 @@ io.on('connection', (socket) => {
     if (!Number.isInteger(slot) || slot < 0 || slot >= room.amida.slotCount) return;
 
     const slots = room.amida.slots;
-    if (slots[slot] !== null && slots[slot] !== playerId) return; // someone else already has it
+    if (slots[slot] !== null && slots[slot] !== playerId) return;
 
     const currentIndex = slots.indexOf(playerId);
-    if (currentIndex !== -1) slots[currentIndex] = null; // release any slot I already held
-    if (slot !== currentIndex) slots[slot] = playerId; // re-clicking my own slot just releases it
+    if (currentIndex !== -1) slots[currentIndex] = null;
+    if (slot !== currentIndex) slots[slot] = playerId;
+    // Giving up your slot also takes back the rung you drew.
+    if (!slots.includes(playerId)) room.amida.rungs = room.amida.rungs.filter((r) => r.by !== playerId);
+
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  // Each seated player may add ONE rung; tapping the same spot again removes it.
+  socket.on('amida_add_rung', ({ row, col }) => {
+    if (!joinedCode || !playerId) return;
+    const room = rooms.get(joinedCode);
+    const a = room && room.amida;
+    if (!a || a.phase !== 'picking' || !a.slots.includes(playerId)) return;
+    row = Number(row);
+    col = Number(col);
+    if (!Number.isInteger(row) || row < 0 || row >= a.rows) return;
+    if (!Number.isInteger(col) || col < 0 || col > a.slotCount - 2) return;
+
+    const mineIdx = a.rungs.findIndex((r) => r.by === playerId);
+    const sameSpot = mineIdx !== -1 && a.rungs[mineIdx].row === row && a.rungs[mineIdx].col === col;
+    if (!sameSpot) {
+      const clash = a.rungs.some((r) => r.by !== playerId && r.row === row && Math.abs(r.col - col) <= 1);
+      if (clash) return;
+    }
+    if (mineIdx !== -1) a.rungs.splice(mineIdx, 1);
+    if (!sameSpot) a.rungs.push({ row, col, by: playerId });
 
     room.updatedAt = Date.now();
     broadcast(joinedCode);
@@ -237,58 +274,69 @@ io.on('connection', (socket) => {
   socket.on('amida_begin', () => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (!room || !room.amida || room.amida.phase !== 'picking') return;
-    const { slots, labels } = room.amida;
-    if (slots.some((s) => s === null)) return;
+    const a = room && room.amida;
+    if (!a || a.phase !== 'picking' || a.slots.some((x) => x === null)) return;
 
-    const columns = slots.slice();
-    const { rows, rungs } = buildAmidaLadder(columns.length);
+    const columns = a.slots.slice();
+    const n = columns.length;
+    const rungs = a.rungs.map((r) => ({ row: r.row, col: r.col, by: r.by }));
+    for (let r = 0; r < a.rows; r++) {
+      const used = new Array(n).fill(false);
+      rungs.filter((g) => g.row === r).forEach((g) => { used[g.col] = true; used[g.col + 1] = true; });
+      let c = 0;
+      while (c < n - 1) {
+        if (!used[c] && !used[c + 1] && Math.random() < 0.35) {
+          rungs.push({ row: r, col: c });
+          used[c] = true;
+          used[c + 1] = true;
+          c += 2;
+        } else {
+          c += 1;
+        }
+      }
+    }
+
+    const labels = shuffle(['当たり'].concat(new Array(n - 1).fill('はずれ')));
     const resultsByPid = {};
+    let winnerCol = 0;
     columns.forEach((pid, i) => {
-      const endCol = traceAmidaColumn(rows, rungs, i);
+      const endCol = traceAmidaColumn(a.rows, rungs, i);
       resultsByPid[pid] = labels[endCol];
+      if (labels[endCol] === '当たり') winnerCol = i;
     });
 
-    room.amida.phase = 'ladder';
-    room.amida.columns = columns;
-    room.amida.rows = rows;
-    room.amida.rungs = rungs;
-    room.amida.resultsByPid = resultsByPid;
-    room.amida.revealed = false;
-    room.amida.revealedCols = [];
+    a.phase = 'ladder';
+    a.columns = columns;
+    a.rungs = rungs;
+    a.labels = labels;
+    a.resultsByPid = resultsByPid;
+    a.atariSlot = labels.indexOf('当たり');
+    a.winnerCol = winnerCol;
+    a.revealed = false;
+    a.done = false;
+    delete a.slots;
     room.updatedAt = Date.now();
     broadcast(joinedCode);
   });
 
-  socket.on('amida_reveal', () => {
+  socket.on('amida_reveal_winner', () => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (!room || !room.amida || room.amida.phase !== 'ladder') return;
-    room.amida.revealed = true;
+    const a = room && room.amida;
+    if (!a || a.phase !== 'ladder' || a.revealed) return;
+    a.revealed = true;
+    a.done = false;
+    a.revealMs = Math.min(14000, 9000 + a.columns.length * 150);
     room.updatedAt = Date.now();
     broadcast(joinedCode);
-  });
 
-  socket.on('amida_trace', ({ col }) => {
-    if (!joinedCode) return;
-    const room = rooms.get(joinedCode);
-    if (!room || !room.amida || room.amida.phase !== 'ladder' || !room.amida.revealed) return;
-    col = Number(col);
-    if (!Number.isInteger(col) || col < 0 || col >= room.amida.columns.length) return;
-    if (!room.amida.revealedCols.includes(col)) {
-      room.amida.revealedCols.push(col);
-      room.updatedAt = Date.now();
-      broadcast(joinedCode);
-    }
-  });
-
-  socket.on('amida_reveal_all', () => {
-    if (!joinedCode) return;
-    const room = rooms.get(joinedCode);
-    if (!room || !room.amida || room.amida.phase !== 'ladder' || !room.amida.revealed) return;
-    room.amida.revealedCols = room.amida.columns.map((_, i) => i);
-    room.updatedAt = Date.now();
-    broadcast(joinedCode);
+    const code = joinedCode;
+    setTimeout(() => {
+      const r = rooms.get(code);
+      if (!r || r.amida !== a) return;
+      a.done = true;
+      broadcast(code);
+    }, a.revealMs + 5000);
   });
 
   socket.on('amida_reset', () => {
