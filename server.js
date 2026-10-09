@@ -347,6 +347,16 @@ io.on('connection', (socket) => {
     broadcast(joinedCode);
   });
 
+  socket.on('switch_game', ({ game }) => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room || room.hostId !== playerId) return;
+    if (game !== 'dice' && game !== 'amida' && game !== 'roulette') return;
+    room.game = game;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
   socket.on('roulette_exclude', ({ value }) => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);

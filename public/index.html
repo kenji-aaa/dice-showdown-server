@@ -268,7 +268,7 @@
         <input type="text" id="name-input" maxlength="16" placeholder="例）けんじ" autocomplete="off">
       </div>
       <div>
-        <label>遊ぶゲーム（部屋を作る人が決めます）</label>
+        <label>最初に遊ぶゲーム（部屋の中で部屋主が切り替えられます）</label>
         <div class="game-tabs" id="entry-games" style="margin-bottom:0;">
           <button class="game-tab" type="button" data-game="dice">🎲 ダイス対決</button>
           <button class="game-tab" type="button" data-game="amida">🪜 あみだくじ</button>
@@ -298,7 +298,7 @@
     </div>
     <div class="body">
       <div class="host-note" id="host-note"></div>
-      <div class="game-tabs" hidden>
+      <div class="game-tabs" id="room-tabs" hidden>
         <button class="game-tab" id="tab-dice" data-game="dice" type="button">🎲 ダイス対決</button>
         <button class="game-tab" id="tab-amida" data-game="amida" type="button">🪜 あみだくじ</button>
         <button class="game-tab" id="tab-roulette" data-game="roulette" type="button">🎡 ルーレット</button>
@@ -609,9 +609,10 @@
     var isHost = hostId === playerId;
     var host = (latestData.players || []).find(function (p) { return p.id === hostId; });
     var hostName = host ? host.name : '';
+    document.getElementById('room-tabs').hidden = !isHost;
     document.getElementById('host-note').textContent = isHost
-      ? '👑 あなたが部屋主です（開始・発表などの進行はあなただけが操作できます）'
-      : '👑 部屋主: ' + hostName + '（開始・発表などの進行は部屋主だけが操作できます）';
+      ? '👑 あなたが部屋主です（ゲームの切り替え・開始・発表などはあなただけが操作できます）'
+      : '👑 部屋主: ' + hostName + '（ゲームの切り替え・開始・発表などは部屋主だけが操作できます）';
     if (isHost) return;
     [nextRoundBtn, amidaBeginBtn, amidaRevealBtn, amidaCancelBtn, amidaAgainBtn, rouletteSpinBtn, rouletteClearBtn].forEach(function (b) { b.hidden = true; });
     rouletteExcludeCb.disabled = true;
@@ -1360,6 +1361,12 @@
   });
   amidaAgainBtn.addEventListener('click', function () {
     if (isConnected) socket.emit('amida_reset');
+  });
+
+  [['dice', tabDice], ['amida', tabAmida], ['roulette', tabRoulette]].forEach(function (pair) {
+    pair[1].addEventListener('click', function () {
+      if (isConnected) socket.emit('switch_game', { game: pair[0] });
+    });
   });
 
   var chosenGame = localStorage.getItem('dice_game') || 'dice';
