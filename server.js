@@ -34,7 +34,17 @@ function createRoom() {
   return room;
 }
 
+// If the recorded host isn't actually in the room (missing, or left in a way
+// that skipped the hand-over), the longest-standing player becomes host.
+function hostOf(room) {
+  if (room.players.length > 0 && !room.players.some((p) => p.id === room.hostId)) {
+    room.hostId = room.players[0].id;
+  }
+  return room.hostId;
+}
+
 function publicState(room) {
+  hostOf(room);
   return {
     code: room.code,
     hostId: room.hostId,
@@ -206,7 +216,7 @@ io.on('connection', (socket) => {
   socket.on('next_round', () => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (room && room.hostId !== playerId) return;
+    if (room && hostOf(room) !== playerId) return;
     if (!room) return;
 
     const activeIds = room.activeIds;
@@ -227,7 +237,7 @@ io.on('connection', (socket) => {
   socket.on('amida_setup', ({ slotCount }) => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (room && room.hostId !== playerId) return;
+    if (room && hostOf(room) !== playerId) return;
     if (!room) return;
 
     slotCount = Math.round(Number(slotCount));
@@ -292,7 +302,7 @@ io.on('connection', (socket) => {
   socket.on('amida_begin', () => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (room && room.hostId !== playerId) return;
+    if (room && hostOf(room) !== playerId) return;
     const a = room && room.amida;
     if (!a || a.phase !== 'picking' || a.slots.some((x) => x === null)) return;
 
@@ -341,7 +351,7 @@ io.on('connection', (socket) => {
   socket.on('amida_reveal_winner', () => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (room && room.hostId !== playerId) return;
+    if (room && hostOf(room) !== playerId) return;
     const a = room && room.amida;
     if (!a || a.phase !== 'ladder' || a.revealed) return;
     a.revealed = true;
@@ -362,7 +372,7 @@ io.on('connection', (socket) => {
   socket.on('amida_reset', () => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (room && room.hostId !== playerId) return;
+    if (room && hostOf(room) !== playerId) return;
     if (!room) return;
     room.amida = null;
     room.updatedAt = Date.now();
@@ -372,7 +382,7 @@ io.on('connection', (socket) => {
   socket.on('switch_game', ({ game }) => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (!room || room.hostId !== playerId) return;
+    if (!room || hostOf(room) !== playerId) return;
     if (game !== 'dice' && game !== 'amida' && game !== 'roulette') return;
     room.game = game;
     room.updatedAt = Date.now();
@@ -382,7 +392,7 @@ io.on('connection', (socket) => {
   socket.on('roulette_exclude', ({ value }) => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (room && room.hostId !== playerId) return;
+    if (room && hostOf(room) !== playerId) return;
     if (!room) return;
     room.rouletteExclude = !!value;
     room.updatedAt = Date.now();
@@ -392,7 +402,7 @@ io.on('connection', (socket) => {
   socket.on('roulette_clear_won', () => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (room && room.hostId !== playerId) return;
+    if (room && hostOf(room) !== playerId) return;
     if (!room || (room.roulette && !room.roulette.done)) return;
     room.rouletteWon = [];
     room.updatedAt = Date.now();
@@ -402,7 +412,7 @@ io.on('connection', (socket) => {
   socket.on('roulette_spin', () => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
-    if (room && room.hostId !== playerId) return;
+    if (room && hostOf(room) !== playerId) return;
     if (!room) return;
     if (room.roulette && !room.roulette.done) return;
 
