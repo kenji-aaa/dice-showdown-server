@@ -486,6 +486,7 @@
   // leaves the player stuck with an unresponsive button.
   var desired = null;
   var pendingCreateName = null;
+  var pendingCreateReq = null;
 
   function setErr(msg) { entryErr.textContent = msg || ''; }
 
@@ -505,7 +506,7 @@
     if (desired) {
       socket.emit('join_room', { code: desired.code, name: desired.name, pid: playerId });
     } else if (pendingCreateName) {
-      socket.emit('create_room', { name: pendingCreateName, pid: playerId, game: chosenGame });
+      socket.emit('create_room', { name: pendingCreateName, pid: playerId, game: chosenGame, reqId: pendingCreateReq });
     }
   });
 
@@ -1395,7 +1396,8 @@
     createBtn.disabled = true;
     desired = null;
     pendingCreateName = name;
-    socket.emit('create_room', { name: name, pid: playerId, game: chosenGame });
+    pendingCreateReq = playerId + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    socket.emit('create_room', { name: name, pid: playerId, game: chosenGame, reqId: pendingCreateReq });
   });
 
   joinBtn.addEventListener('click', function () {

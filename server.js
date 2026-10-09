@@ -11,6 +11,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 /** @type {Map<string, Room>} */
 const rooms = new Map();
+const createdByReq = new Map();
 
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const ROOM_TTL_MS = 6 * 60 * 60 * 1000;
@@ -131,11 +132,31 @@ io.on('connection', (socket) => {
   let joinedCode = null;
   let playerId = null;
 
-  socket.on('create_room', ({ name, pid, game }) => {
+  function leaveCurrentRoom(exceptCode) {
+    if (!joinedCode || joinedCode === exceptCode) return;
+    socket.leave(joinedCode);
+    if (playerId) removePlayer(joinedCode, playerId);
+    joinedCode = null;
+  }
+
+  socket.on('create_room', ({ name, pid, game, reqId }) => {
     name = String(name || '').slice(0, 16).trim();
     pid = String(pid || '').slice(0, 64);
     if (!name || !pid) { socket.emit('join_error', { code: 'bad_input' }); return; }
+    // A re-sent create (e.g. after a reconnect) must not spawn a second room.
+    const prevCode = reqId ? createdByReq.get(String(reqId)) : null;
+    if (prevCode && rooms.has(prevCode)) {
+      leaveCurrentRoom(prevCode);
+      socket.join(prevCode);
+      joinedCode = prevCode;
+      playerId = pid;
+      socket.emit('joined', { code: prevCode });
+      broadcast(prevCode);
+      return;
+    }
+    leaveCurrentRoom(null);
     const room = createRoom();
+    if (reqId) createdByReq.set(String(reqId), room.code);
     if (game === 'dice' || game === 'amida' || game === 'roulette') room.game = game;
     room.players.push({ id: pid, name });
     room.hostId = pid;
@@ -154,6 +175,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(code);
     if (!room) { socket.emit('join_error', { code: 'not_found' }); return; }
     if (!name || !pid) { socket.emit('join_error', { code: 'bad_input' }); return; }
+    leaveCurrentRoom(code);
     const existing = room.players.find((p) => p.id === pid);
     if (existing) existing.name = name;
     else room.players.push({ id: pid, name });
