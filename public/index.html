@@ -196,6 +196,17 @@
   }
   .amida-result-row.impact { animation: amida-pulse 0.5s ease; }
 
+
+  .roulette-wrap { position: relative; width: 100%; max-width: 360px; margin: 0.5rem auto 0.8rem; }
+  #roulette-canvas { width: 100%; height: auto; display: block; }
+  .roulette-pointer {
+    position: absolute; top: -4px; left: 50%; transform: translateX(-50%); z-index: 2;
+    width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent;
+    border-top: 26px solid var(--accent); filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3));
+  }
+  .roulette-opt { display: flex; align-items: center; gap: 0.5rem; font-size: 13px; color: var(--ink-secondary); margin: 0.4rem 0 0.2rem; cursor: pointer; }
+  .roulette-opt input { width: 16px; height: 16px; }
+  .roulette-won { font-size: 12px; color: var(--ink-secondary); margin-bottom: 0.8rem; min-height: 1em; }
   [hidden] { display: none !important; }
   @media (prefers-reduced-motion: reduce) {
     .big-die.spinning, .big-die.landed, .die:not(.empty) { animation: none; }
@@ -238,6 +249,7 @@
       <div class="game-tabs">
         <button class="game-tab" id="tab-dice" data-game="dice" type="button">🎲 ダイス対決</button>
         <button class="game-tab" id="tab-amida" data-game="amida" type="button">🪜 あみだくじ</button>
+        <button class="game-tab" id="tab-roulette" data-game="roulette" type="button">🎡 ルーレット</button>
       </div>
 
       <div id="dice-game">
@@ -288,6 +300,20 @@
             <button class="ghost" id="amida-again-btn" hidden>もう一度くじを作る</button>
           </div>
           <div class="err" id="amida-run-err"></div>
+        </div>
+      </div>
+
+      <div id="roulette-game" hidden>
+        <div class="roulette-wrap">
+          <div class="roulette-pointer"></div>
+          <canvas id="roulette-canvas" width="360" height="360"></canvas>
+        </div>
+        <div class="status-line" id="roulette-status"></div>
+        <label class="roulette-opt"><input type="checkbox" id="roulette-exclude"> 当選済みの人は除外する</label>
+        <div class="roulette-won" id="roulette-won"></div>
+        <div class="actions">
+          <button class="primary" id="roulette-spin-btn">ルーレットを回す</button>
+          <button class="ghost" id="roulette-clear-btn" hidden>当選履歴をリセット</button>
         </div>
       </div>
 
@@ -360,6 +386,14 @@
 
   var tabDice = document.getElementById('tab-dice');
   var tabAmida = document.getElementById('tab-amida');
+  var tabRoulette = document.getElementById('tab-roulette');
+  var rouletteGameDiv = document.getElementById('roulette-game');
+  var rouletteCanvas = document.getElementById('roulette-canvas');
+  var rouletteStatus = document.getElementById('roulette-status');
+  var rouletteExcludeCb = document.getElementById('roulette-exclude');
+  var rouletteWonDiv = document.getElementById('roulette-won');
+  var rouletteSpinBtn = document.getElementById('roulette-spin-btn');
+  var rouletteClearBtn = document.getElementById('roulette-clear-btn');
   var diceGameDiv = document.getElementById('dice-game');
   var amidaGameDiv = document.getElementById('amida-game');
   var amidaSetupDiv = document.getElementById('amida-setup');
@@ -513,9 +547,12 @@
     tabAmida.classList.toggle('active', game === 'amida');
     diceGameDiv.hidden = game !== 'dice';
     amidaGameDiv.hidden = game !== 'amida';
+    tabRoulette.classList.toggle('active', game === 'roulette');
+    rouletteGameDiv.hidden = game !== 'roulette';
 
     renderDice();
     renderAmida();
+    renderRoulette();
   }
 
   function renderDice() {
@@ -895,6 +932,156 @@
   tabDice.addEventListener('click', function () {
     if (isConnected) socket.emit('switch_game', { game: 'dice' });
   });
+
+  var ROULETTE_COLORS = ['#c1440e', '#1d6fa5', '#8a5cb5', '#c2185b', '#2e8b57', '#b8860b', '#5c6bc0', '#00838f'];
+  var rouletteAngle = 0;
+  var rouletteAnimId = null;
+  var rouletteSeenSpin = null;
+  var rouletteAnimating = false;
+  var rouletteLastEntriesKey = '';
+
+  function rouletteEntries() {
+    var r = latestData.roulette;
+    if (r && (r.done || rouletteAnimating)) return r.entries;
+    var won = latestData.rouletteWon || [];
+    var all = latestData.players || [];
+    var pool = all.filter(function (p) { return !latestData.rouletteExclude || won.indexOf(p.id) === -1; });
+    return pool.length ? pool : all;
+  }
+
+  function drawRoulette(entries, angle, winnerIdx) {
+    var ctx = rouletteCanvas.getContext('2d');
+    var size = rouletteCanvas.width;
+    var cx = size / 2, cy = size / 2, radius = size / 2 - 6;
+    ctx.clearRect(0, 0, size, size);
+    var n = entries.length;
+    if (!n) return;
+    var seg = (Math.PI * 2) / n;
+    for (var i = 0; i < n; i++) {
+      var start = angle - Math.PI / 2 + i * seg;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, radius, start, start + seg);
+      ctx.closePath();
+      ctx.fillStyle = ROULETTE_COLORS[i % ROULETTE_COLORS.length];
+      ctx.fill();
+      ctx.lineWidth = i === winnerIdx ? 5 : 2;
+      ctx.strokeStyle = i === winnerIdx ? '#ffffff' : 'rgba(255,255,255,0.7)';
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(start + seg / 2);
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      var fontSize = Math.max(11, Math.min(20, 220 / Math.max(n, 6) + 6));
+      ctx.font = '700 ' + fontSize + 'px "Noto Sans JP", sans-serif';
+      var name = entries[i].name;
+      if (name.length > 7) name = name.slice(0, 6) + '…';
+      ctx.fillText(name, radius - 14, 0);
+      ctx.restore();
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, 16, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+  }
+
+  function rouletteTargetAngle(n, idx) {
+    var seg = (Math.PI * 2) / n;
+    return -(idx + 0.5) * seg;
+  }
+
+  function easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
+
+  function playRouletteSpin(r) {
+    rouletteAnimating = true;
+    var n = r.entries.length;
+    var from = rouletteAngle % (Math.PI * 2);
+    var turns = 6 + Math.floor(Math.random() * 2);
+    var target = rouletteTargetAngle(n, r.winnerIndex) - Math.PI * 2 * turns;
+    var startedAt = performance.now();
+    var lastTick = -1;
+    rouletteSpinBtn.disabled = true;
+    rouletteStatus.className = 'status-line';
+    rouletteStatus.textContent = '回しています…';
+    if (rouletteAnimId) cancelAnimationFrame(rouletteAnimId);
+
+    function frame(now) {
+      var t = Math.min(1, (now - startedAt) / r.spinMs);
+      rouletteAngle = from + (target - from) * easeOutQuart(t);
+      drawRoulette(r.entries, rouletteAngle, -1);
+      var tick = Math.floor(((-rouletteAngle) / (Math.PI * 2)) * n);
+      if (tick !== lastTick) { lastTick = tick; if (t < 0.97) playAmidaTones([880], 0.02); }
+      if (t < 1) {
+        rouletteAnimId = requestAnimationFrame(frame);
+      } else {
+        rouletteAnimating = false;
+        rouletteAnimId = null;
+        rouletteAngle = target;
+        var winner = r.entries[r.winnerIndex];
+        drawRoulette(r.entries, rouletteAngle, r.winnerIndex);
+        playAtariChime();
+        showAmidaBanner('🎤 ' + winner.name + ' さん！');
+        renderRoulette();
+      }
+    }
+    rouletteAnimId = requestAnimationFrame(frame);
+  }
+
+  function renderRoulette() {
+    if (!latestData) return;
+    var r = latestData.roulette;
+    rouletteExcludeCb.checked = !!latestData.rouletteExclude;
+
+    var wonIds = latestData.rouletteWon || [];
+    var wonNames = wonIds.map(function (id) {
+      var p = (latestData.players || []).find(function (x) { return x.id === id; });
+      return p ? p.name : null;
+    }).filter(Boolean);
+    rouletteWonDiv.textContent = wonNames.length ? '当選済み: ' + wonNames.join('、') : '';
+    rouletteClearBtn.hidden = wonNames.length === 0 || rouletteAnimating;
+
+    if (r && r.id !== rouletteSeenSpin) {
+      rouletteSeenSpin = r.id;
+      if (!r.done) {
+        playRouletteSpin(r);
+        return;
+      }
+      rouletteAngle = rouletteTargetAngle(r.entries.length, r.winnerIndex);
+    }
+    if (rouletteAnimating) return;
+
+    var entries = rouletteEntries();
+    var showFinal = !!(r && r.done && entries === r.entries);
+    var key = JSON.stringify(entries.map(function (e) { return e.id; }));
+    if (key !== rouletteLastEntriesKey && !showFinal) { rouletteAngle = 0; rouletteLastEntriesKey = key; }
+    drawRoulette(entries, rouletteAngle, showFinal ? r.winnerIndex : -1);
+
+    rouletteSpinBtn.disabled = (latestData.players || []).length === 0;
+    if (showFinal) {
+      rouletteStatus.className = 'status-line winner-text';
+      rouletteStatus.textContent = '🎤 ' + r.entries[r.winnerIndex].name + ' さんに決定！';
+    } else {
+      rouletteStatus.className = 'status-line';
+      rouletteStatus.textContent = entries.length + '人でルーレットを回します';
+    }
+  }
+
+  tabRoulette.addEventListener('click', function () {
+    if (isConnected) socket.emit('switch_game', { game: 'roulette' });
+  });
+  rouletteSpinBtn.addEventListener('click', function () {
+    if (isConnected && !rouletteAnimating) socket.emit('roulette_spin');
+  });
+  rouletteClearBtn.addEventListener('click', function () {
+    if (isConnected) socket.emit('roulette_clear_won');
+  });
+  rouletteExcludeCb.addEventListener('change', function () {
+    if (isConnected) socket.emit('roulette_exclude', { value: rouletteExcludeCb.checked });
+  });
+
   tabAmida.addEventListener('click', function () {
     if (isConnected) socket.emit('switch_game', { game: 'amida' });
   });

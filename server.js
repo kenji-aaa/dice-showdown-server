@@ -28,7 +28,7 @@ function randomFace() {
 function createRoom() {
   let code;
   do { code = randomCode(); } while (rooms.has(code));
-  const room = { code, game: 'dice', round: 1, players: [], rolls: {}, activeIds: null, amida: null, updatedAt: Date.now() };
+  const room = { code, game: 'dice', round: 1, players: [], rolls: {}, activeIds: null, amida: null, roulette: null, rouletteWon: [], rouletteExclude: true, updatedAt: Date.now() };
   rooms.set(code, room);
   return room;
 }
@@ -42,6 +42,9 @@ function publicState(room) {
     rolls: room.rolls,
     activeIds: room.activeIds,
     amida: room.amida,
+    roulette: room.roulette,
+    rouletteWon: room.rouletteWon,
+    rouletteExclude: room.rouletteExclude,
   };
 }
 
@@ -179,7 +182,7 @@ io.on('connection', (socket) => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
     if (!room) return;
-    if (game !== 'dice' && game !== 'amida') return;
+    if (game !== 'dice' && game !== 'amida' && game !== 'roulette') return;
     room.game = game;
     room.updatedAt = Date.now();
     broadcast(joinedCode);
@@ -295,6 +298,58 @@ io.on('connection', (socket) => {
     room.amida = null;
     room.updatedAt = Date.now();
     broadcast(joinedCode);
+  });
+
+  socket.on('roulette_exclude', ({ value }) => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room) return;
+    room.rouletteExclude = !!value;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('roulette_clear_won', () => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room || (room.roulette && !room.roulette.done)) return;
+    room.rouletteWon = [];
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('roulette_spin', () => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room) return;
+    if (room.roulette && !room.roulette.done) return;
+
+    let pool = room.players.filter((p) => !room.rouletteExclude || !room.rouletteWon.includes(p.id));
+    if (pool.length === 0) { room.rouletteWon = []; pool = room.players.slice(); }
+    if (pool.length === 0) return;
+
+    const winnerIndex = Math.floor(Math.random() * pool.length);
+    const spinMs = 6000;
+    const roulette = {
+      id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      entries: pool.map((p) => ({ id: p.id, name: p.name })),
+      winnerIndex,
+      spinMs,
+      done: false,
+    };
+    room.roulette = roulette;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+
+    const code = joinedCode;
+    setTimeout(() => {
+      const r = rooms.get(code);
+      if (!r || r.roulette !== roulette) return;
+      roulette.done = true;
+      r.rouletteWon.push(roulette.entries[winnerIndex].id);
+      r.updatedAt = Date.now();
+      broadcast(code);
+    }, spinMs + 300);
   });
 
   socket.on('leave_room', () => {
