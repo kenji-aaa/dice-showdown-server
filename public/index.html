@@ -258,8 +258,10 @@
   .card3d .face { position: absolute; inset: 0; border-radius: 12px; backface-visibility: hidden; display: flex; align-items: center; justify-content: center; font-family: "Zen Maru Gothic", sans-serif; font-weight: 700; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
   .card3d .back { background: repeating-linear-gradient(45deg, var(--felt), var(--felt) 8px, color-mix(in srgb, var(--felt) 80%, #000) 8px, color-mix(in srgb, var(--felt) 80%, #000) 16px); color: var(--felt-ink); font-size: 26px; border: 3px solid var(--felt-ink); }
   .card3d .front { background: var(--surface); transform: rotateY(180deg); font-size: 17px; border: 3px solid var(--border); color: var(--ink-secondary); }
-  .card3d .front { font-size: 52px; line-height: 1; }
-  .card3d.atari .front { background: #fff3c4; color: var(--accent); border-color: #ffb400; font-size: 58px; line-height: 1; box-shadow: 0 0 22px rgba(255,180,0,0.9); }
+  .card3d .front { flex-direction: column; gap: 4px; line-height: 1; }
+  .card3d .front .em { font-size: 44px; line-height: 1; }
+  .card3d .front .lb { font-size: 15px; font-weight: 700; letter-spacing: 0.05em; }
+  .card3d.atari .front { background: #fff3c4; color: var(--accent); border-color: #ffb400; box-shadow: 0 0 22px rgba(255,180,0,0.9); }
   .card3d.mine .back { border-color: var(--accent); }
   .card3d.taken .back { filter: brightness(0.85); }
   .card3d.disabled { cursor: default; }
@@ -1459,7 +1461,7 @@
         (isAtari && finished ? ' atari' : '') + (shake ? ' shake' : '') + ((c.revealed && !live) ? ' disabled' : '');
       out += '<div class="' + cls + '" data-i="' + i + '"><div class="inner">' +
         '<div class="face back">' + (i + 1) + '</div>' +
-        '<div class="face front">' + (c.revealed ? (isAtari ? '☠' : '👼') : '') + '</div></div>' +
+        '<div class="face front">' + (c.revealed ? (isAtari ? '<span class="em">☠</span><span class="lb">当たり</span>' : '<span class="em">👼</span><span class="lb">はずれ</span>') : '') + '</div></div>' +
         '<div class="who">' + (pid ? escapeHtml(nameForPid(pid)) + (mine ? '（あなた）' : '') : '空き') + '</div></div>';
     }
     return out;
