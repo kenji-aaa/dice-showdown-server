@@ -246,6 +246,10 @@
   .member-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: -0.3rem 0 0.9rem; }
   .member-chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); }
   .member-chip.me { border-color: var(--felt); font-weight: 700; }
+  .member-chip.spec { opacity: 0.5; text-decoration: line-through; }
+  .member-chip.pick { cursor: pointer; }
+  .member-chip.pick:hover { border-color: var(--accent); }
+  .member-tip { width: 100%; text-align: center; font-size: 11px; color: var(--ink-secondary); }
   .member-count { width: 100%; text-align: center; font-size: 11px; color: var(--ink-secondary); }
   .wrap.wide { max-width: 1040px; }
   .wrap.wide .amida-scroll { display: flex; flex-direction: column; align-items: center; }
@@ -615,9 +619,13 @@
     var hostName = host ? host.name : '';
     document.getElementById('room-tabs').hidden = !isHost;
     var members = latestData.players || [];
-    document.getElementById('member-list').innerHTML = '<div class="member-count">参加者 ' + members.length + '人</div>' + members.map(function (p) {
-      return '<span class="member-chip' + (p.id === playerId ? ' me' : '') + '">' + (p.id === hostId ? '👑 ' : '') + escapeHtml(p.name) + (p.id === playerId ? '（あなた）' : '') + '</span>';
-    }).join('');
+    var specs = latestData.spectators || [];
+    var joining = members.length - specs.length;
+    document.getElementById('member-list').innerHTML = '<div class="member-count">参加者 ' + joining + '人' + (specs.length ? '（観戦 ' + specs.length + '人）' : '') + '</div>' + members.map(function (p) {
+      var spec = specs.indexOf(p.id) !== -1;
+      return '<span class="member-chip' + (p.id === playerId ? ' me' : '') + (spec ? ' spec' : '') + (isHost ? ' pick' : '') + '" data-pid="' + escapeHtml(p.id) + '">' + (p.id === hostId ? '👑 ' : '') + (spec ? '👀 ' : '') + escapeHtml(p.name) + (p.id === playerId ? '（あなた）' : '') + '</span>';
+    }).join('') + (isHost ? '<div class="member-tip">名前をタップすると、その人を観戦に切り替えられます（もう一度タップで参加に戻す）</div>' : '') +
+      (specs.indexOf(playerId) !== -1 ? '<div class="member-tip" style="color:var(--accent);font-weight:700;">👀 あなたは観戦中です（ゲームには参加せず、見るだけです）</div>' : '');
     document.getElementById('host-note').textContent = isHost
       ? '👑 あなたが部屋主です（ゲームの切り替え・開始・発表などはあなただけが操作できます）'
       : '👑 部屋主: ' + hostName + '（ゲームの切り替え・開始・発表などは部屋主だけが操作できます）';
@@ -640,7 +648,7 @@
     var rows = players.map(function (p) {
       var r = rolls[p.id];
       var hasCurrent = r && r.round === round;
-      var isActive = !activeIds || activeIds.indexOf(p.id) !== -1;
+      var isActive = (latestData.spectators || []).indexOf(p.id) === -1 && (!activeIds || activeIds.indexOf(p.id) !== -1);
       return {
         pid: p.id, name: p.name,
         values: hasCurrent ? r.values : null,
@@ -996,7 +1004,7 @@
     if (!amida) {
       stopAmidaAnim();
       amidaSessionId = null;
-      var count = (latestData.players || []).length;
+      var count = (latestData.players || []).length - (latestData.spectators || []).length;
       amidaCountNote.textContent = count + '人でラダーを作ります';
       amidaStartBtn.disabled = count < 2;
       if (latestData.hostId === playerId) {
@@ -1150,7 +1158,8 @@
     var r = latestData.roulette;
     if (r && (r.done || rouletteAnimating)) return r.entries;
     var won = latestData.rouletteWon || [];
-    var all = latestData.players || [];
+    var specs = latestData.spectators || [];
+    var all = (latestData.players || []).filter(function (p) { return specs.indexOf(p.id) === -1; });
     var pool = all.filter(function (p) { return !latestData.rouletteExclude || won.indexOf(p.id) === -1; });
     return pool.length ? pool : all;
   }
@@ -1332,6 +1341,7 @@
     var el = e.target.closest('[data-slot]');
     var amida = latestData && latestData.amida;
     if (!el || !amida || amida.phase !== 'picking' || !isConnected) return;
+    if ((latestData.spectators || []).indexOf(playerId) !== -1) return;
     var idx = parseInt(el.getAttribute('data-slot'), 10);
     var heldBy = amida.slots[idx];
     if (heldBy && heldBy !== playerId) return;
@@ -1371,6 +1381,14 @@
     pair[1].addEventListener('click', function () {
       if (isConnected) socket.emit('switch_game', { game: pair[0] });
     });
+  });
+
+  document.getElementById('member-list').addEventListener('click', function (e) {
+    var chip = e.target.closest('.member-chip.pick');
+    if (!chip || !latestData || latestData.hostId !== playerId || !isConnected) return;
+    var pid = chip.getAttribute('data-pid');
+    var isSpec = (latestData.spectators || []).indexOf(pid) !== -1;
+    socket.emit('set_spectator', { pid: pid, value: !isSpec });
   });
 
   var chosenGame = localStorage.getItem('dice_game') || 'dice';

@@ -29,7 +29,7 @@ function randomFace() {
 function createRoom() {
   let code;
   do { code = randomCode(); } while (rooms.has(code));
-  const room = { code, game: 'dice', round: 1, players: [], rolls: {}, activeIds: null, hostId: null, amida: null, roulette: null, rouletteWon: [], rouletteExclude: true, updatedAt: Date.now() };
+  const room = { code, game: 'dice', round: 1, players: [], rolls: {}, activeIds: null, hostId: null, spectators: [], amida: null, roulette: null, rouletteWon: [], rouletteExclude: true, updatedAt: Date.now() };
   rooms.set(code, room);
   return room;
 }
@@ -43,6 +43,11 @@ function hostOf(room) {
   return room.hostId;
 }
 
+// Players who actually take part (everyone except those set to spectate).
+function playersIn(room) {
+  return room.players.filter((p) => !room.spectators.includes(p.id));
+}
+
 function publicState(room) {
   hostOf(room);
   return {
@@ -53,6 +58,7 @@ function publicState(room) {
     players: room.players,
     rolls: room.rolls,
     activeIds: room.activeIds,
+    spectators: room.spectators,
     amida: publicAmida(room.amida),
     roulette: room.roulette,
     rouletteWon: room.rouletteWon,
@@ -116,6 +122,7 @@ function removePlayer(code, pid) {
   if (!room) return;
   room.players = room.players.filter((p) => p.id !== pid);
   if (room.activeIds) room.activeIds = room.activeIds.filter((id) => id !== pid);
+  room.spectators = room.spectators.filter((id) => id !== pid);
   if (room.amida && room.amida.phase === 'picking') {
     const idx = room.amida.slots.indexOf(pid);
     if (idx !== -1) room.amida.slots[idx] = null;
@@ -201,6 +208,7 @@ io.on('connection', (socket) => {
     if (!joinedCode || !playerId) return;
     const room = rooms.get(joinedCode);
     if (!room) return;
+    if (room.spectators.includes(playerId)) return;
     const isActive = !room.activeIds || room.activeIds.includes(playerId);
     if (!isActive) return;
     const existing = room.rolls[playerId];
@@ -220,7 +228,7 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     const activeIds = room.activeIds;
-    const contenders = room.players.filter((p) => !activeIds || activeIds.includes(p.id));
+    const contenders = playersIn(room).filter((p) => !activeIds || activeIds.includes(p.id));
     if (contenders.length === 0) return;
     const allRolled = contenders.every((p) => room.rolls[p.id] && room.rolls[p.id].round === room.round);
     if (!allRolled) return;
@@ -241,7 +249,7 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     // One lane per person currently in the room.
-    const slotCount = Math.min(30, room.players.length);
+    const slotCount = Math.min(30, playersIn(room).length);
     if (slotCount < 2) return;
 
     room.amida = {
@@ -260,6 +268,7 @@ io.on('connection', (socket) => {
     if (!joinedCode || !playerId) return;
     const room = rooms.get(joinedCode);
     if (!room || !room.amida || room.amida.phase !== 'picking') return;
+    if (room.spectators.includes(playerId)) return;
     slot = Number(slot);
     if (!Number.isInteger(slot) || slot < 0 || slot >= room.amida.slotCount) return;
 
@@ -390,6 +399,28 @@ io.on('connection', (socket) => {
     broadcast(joinedCode);
   });
 
+  socket.on('set_spectator', ({ pid, value }) => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room || hostOf(room) !== playerId) return;
+    pid = String(pid || '');
+    if (!room.players.some((p) => p.id === pid)) return;
+    const on = !!value;
+    room.spectators = room.spectators.filter((id) => id !== pid);
+    if (on) {
+      room.spectators.push(pid);
+      if (room.activeIds) room.activeIds = room.activeIds.filter((id) => id !== pid);
+      const a = room.amida;
+      if (a && a.phase === 'picking') {
+        const i = a.slots.indexOf(pid);
+        if (i !== -1) a.slots[i] = null;
+        a.rungs = a.rungs.filter((r) => r.by !== pid);
+      }
+    }
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
   socket.on('roulette_exclude', ({ value }) => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
@@ -417,8 +448,9 @@ io.on('connection', (socket) => {
     if (!room) return;
     if (room.roulette && !room.roulette.done) return;
 
-    let pool = room.players.filter((p) => !room.rouletteExclude || !room.rouletteWon.includes(p.id));
-    if (pool.length === 0) { room.rouletteWon = []; pool = room.players.slice(); }
+    const eligible = playersIn(room);
+    let pool = eligible.filter((p) => !room.rouletteExclude || !room.rouletteWon.includes(p.id));
+    if (pool.length === 0) { room.rouletteWon = []; pool = eligible.slice(); }
     if (pool.length === 0) return;
 
     const winnerIndex = Math.floor(Math.random() * pool.length);
