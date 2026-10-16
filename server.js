@@ -29,7 +29,7 @@ function randomFace() {
 function createRoom() {
   let code;
   do { code = randomCode(); } while (rooms.has(code));
-  const room = { code, game: 'dice', round: 1, players: [], rolls: {}, activeIds: null, hostId: null, spectators: [], amida: null, roulette: null, rouletteWon: [], rouletteExclude: true, updatedAt: Date.now() };
+  const room = { code, game: 'dice', round: 1, players: [], rolls: {}, activeIds: null, hostId: null, spectators: [], cards: null, amida: null, roulette: null, rouletteWon: [], rouletteExclude: true, updatedAt: Date.now() };
   rooms.set(code, room);
   return room;
 }
@@ -48,6 +48,15 @@ function playersIn(room) {
   return room.players.filter((p) => !room.spectators.includes(p.id));
 }
 
+function publicCards(c) {
+  if (!c) return null;
+  if (!c.revealed) {
+    const { atari, order, ...rest } = c;
+    return rest;
+  }
+  return c;
+}
+
 function publicState(room) {
   hostOf(room);
   return {
@@ -60,6 +69,7 @@ function publicState(room) {
     activeIds: room.activeIds,
     spectators: room.spectators,
     amida: publicAmida(room.amida),
+    cards: publicCards(room.cards),
     roulette: room.roulette,
     rouletteWon: room.rouletteWon,
     rouletteExclude: room.rouletteExclude,
@@ -123,6 +133,10 @@ function removePlayer(code, pid) {
   room.players = room.players.filter((p) => p.id !== pid);
   if (room.activeIds) room.activeIds = room.activeIds.filter((id) => id !== pid);
   room.spectators = room.spectators.filter((id) => id !== pid);
+  if (room.cards && !room.cards.revealed) {
+    const ci = room.cards.picks.indexOf(pid);
+    if (ci !== -1) room.cards.picks[ci] = null;
+  }
   if (room.amida && room.amida.phase === 'picking') {
     const idx = room.amida.slots.indexOf(pid);
     if (idx !== -1) room.amida.slots[idx] = null;
@@ -174,7 +188,7 @@ io.on('connection', (socket) => {
     leaveCurrentRoom(null);
     const room = createRoom();
     if (reqId) createdByReq.set(String(reqId), room.code);
-    if (game === 'dice' || game === 'amida' || game === 'roulette') room.game = game;
+    if (game === 'dice' || game === 'amida' || game === 'roulette' || game === 'cards') room.game = game;
     room.players.push({ id: pid, name });
     room.hostId = pid;
     room.updatedAt = Date.now();
@@ -393,8 +407,75 @@ io.on('connection', (socket) => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
     if (!room || hostOf(room) !== playerId) return;
-    if (game !== 'dice' && game !== 'amida' && game !== 'roulette') return;
+    if (game !== 'dice' && game !== 'amida' && game !== 'roulette' && game !== 'cards') return;
     room.game = game;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('cards_setup', () => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room || hostOf(room) !== playerId) return;
+    const n = Math.min(30, playersIn(room).length);
+    if (n < 2) return;
+    room.cards = {
+      id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      n,
+      picks: new Array(n).fill(null),
+      atari: Math.floor(Math.random() * n),
+      revealed: false,
+      done: false,
+    };
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('cards_pick', ({ idx }) => {
+    if (!joinedCode || !playerId) return;
+    const room = rooms.get(joinedCode);
+    const c = room && room.cards;
+    if (!c || c.revealed || room.spectators.includes(playerId)) return;
+    idx = Number(idx);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= c.n) return;
+    if (c.picks[idx] !== null && c.picks[idx] !== playerId) return;
+    const cur = c.picks.indexOf(playerId);
+    if (cur !== -1) c.picks[cur] = null;
+    if (idx !== cur) c.picks[idx] = playerId;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('cards_reveal', () => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    const c = room && room.cards;
+    if (!c || c.revealed || hostOf(room) !== playerId) return;
+    if (c.picks.some((p) => p === null)) return;
+    const others = [];
+    for (let i = 0; i < c.n; i++) if (i !== c.atari) others.push(i);
+    for (let i = others.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [others[i], others[j]] = [others[j], others[i]];
+    }
+    c.order = others.concat([c.atari]);
+    c.revealed = true;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+    const code = joinedCode;
+    setTimeout(() => {
+      const r = rooms.get(code);
+      if (!r || r.cards !== c) return;
+      c.done = true;
+      broadcast(code);
+    }, (c.n - 2) * 500 + 800 + 2200 + 4500);
+  });
+
+  socket.on('cards_reset', () => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room || hostOf(room) !== playerId) return;
+    room.cards = null;
     room.updatedAt = Date.now();
     broadcast(joinedCode);
   });
@@ -409,6 +490,10 @@ io.on('connection', (socket) => {
     room.spectators = room.spectators.filter((id) => id !== pid);
     if (on) {
       room.spectators.push(pid);
+      if (room.cards && !room.cards.revealed) {
+        const ci = room.cards.picks.indexOf(pid);
+        if (ci !== -1) room.cards.picks[ci] = null;
+      }
       if (room.activeIds) room.activeIds = room.activeIds.filter((id) => id !== pid);
       const a = room.amida;
       if (a && a.phase === 'picking') {

@@ -251,6 +251,21 @@
   .member-chip.pick:hover { border-color: var(--accent); }
   .member-tip { width: 100%; text-align: center; font-size: 11px; color: var(--ink-secondary); }
   .member-count { width: 100%; text-align: center; font-size: 11px; color: var(--ink-secondary); }
+  .cards-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin: 0.8rem 0; perspective: 900px; }
+  .card3d { width: 86px; cursor: pointer; text-align: center; }
+  .card3d .inner { position: relative; width: 86px; height: 120px; transform-style: preserve-3d; transition: transform 0.7s cubic-bezier(.3,1.3,.5,1); }
+  .card3d.flipped .inner { transform: rotateY(180deg); }
+  .card3d .face { position: absolute; inset: 0; border-radius: 12px; backface-visibility: hidden; display: flex; align-items: center; justify-content: center; font-family: "Zen Maru Gothic", sans-serif; font-weight: 700; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+  .card3d .back { background: repeating-linear-gradient(45deg, var(--felt), var(--felt) 8px, color-mix(in srgb, var(--felt) 80%, #000) 8px, color-mix(in srgb, var(--felt) 80%, #000) 16px); color: var(--felt-ink); font-size: 26px; border: 3px solid var(--felt-ink); }
+  .card3d .front { background: var(--surface); transform: rotateY(180deg); font-size: 17px; border: 3px solid var(--border); color: var(--ink-secondary); }
+  .card3d.atari .front { background: #fff3c4; color: var(--accent); border-color: #ffb400; font-size: 20px; box-shadow: 0 0 22px rgba(255,180,0,0.9); }
+  .card3d.mine .back { border-color: var(--accent); }
+  .card3d.taken .back { filter: brightness(0.85); }
+  .card3d.disabled { cursor: default; }
+  .card3d .who { margin-top: 6px; font-size: 12px; min-height: 1.3em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-secondary); }
+  .card3d.mine .who { color: var(--accent); font-weight: 700; }
+  .card3d.shake .inner { animation: card-shake 0.18s linear infinite; }
+  @keyframes card-shake { 0%,100% { transform: translateX(0) rotate(0); } 25% { transform: translateX(-3px) rotate(-3deg); } 75% { transform: translateX(3px) rotate(3deg); } }
   .wrap.wide { max-width: 1040px; }
   .wrap.wide .amida-scroll { display: flex; flex-direction: column; align-items: center; }
   .wrap.wide .amida-results { max-width: 560px; margin-left: auto; margin-right: auto; width: 100%; }
@@ -268,7 +283,7 @@
   <section id="entry" class="card">
     <div class="header">
       <h1>🎮 みんなでゲーム</h1>
-      <p>ダイス・あみだくじ・ルーレット</p>
+      <p>ダイス・あみだくじ・ルーレット・カード</p>
     </div>
     <div class="body">
       <div>
@@ -281,6 +296,7 @@
           <button class="game-tab" type="button" data-game="dice">🎲 ダイス対決</button>
           <button class="game-tab" type="button" data-game="amida">🪜 あみだくじ</button>
           <button class="game-tab" type="button" data-game="roulette">🎡 ルーレット</button>
+          <button class="game-tab" type="button" data-game="cards">🃏 カード</button>
         </div>
       </div>
       <button class="primary" id="create-btn">部屋を作る</button>
@@ -311,6 +327,7 @@
         <button class="game-tab" id="tab-dice" data-game="dice" type="button">🎲 ダイス対決</button>
         <button class="game-tab" id="tab-amida" data-game="amida" type="button">🪜 あみだくじ</button>
         <button class="game-tab" id="tab-roulette" data-game="roulette" type="button">🎡 ルーレット</button>
+        <button class="game-tab" id="tab-cards" data-game="cards" type="button">🃏 カード</button>
       </div>
 
       <div id="dice-game">
@@ -369,6 +386,25 @@
         <div class="actions">
           <button class="primary" id="roulette-spin-btn">ルーレットを回す</button>
           <button class="ghost" id="roulette-clear-btn" hidden>当選履歴をリセット</button>
+        </div>
+      </div>
+
+      <div id="cards-game" hidden>
+        <div id="cards-setup">
+          <div class="amida-hint big" id="cards-count-note" style="margin-bottom:0.4rem;"></div>
+          <div class="footnote" style="margin: 0 0 0.8rem;">人数ぶんのカードを伏せて並べ、各自が好きな1枚を選びます。全員選んだら部屋主が一斉にめくります（当たりは1枚だけ）。</div>
+          <button class="primary" id="cards-setup-btn">カードを配る</button>
+          <div class="err" id="cards-err"></div>
+        </div>
+        <div id="cards-board" hidden>
+          <div class="amida-hint" id="cards-hint"></div>
+          <div class="cards-grid" id="cards-grid"></div>
+          <div class="status-line" id="cards-status"></div>
+          <div class="actions">
+            <button class="primary" id="cards-reveal-btn" disabled>🃏 一斉オープン</button>
+            <button class="ghost" id="cards-cancel-btn">やめる</button>
+            <button class="ghost" id="cards-again-btn" hidden>もう一度</button>
+          </div>
         </div>
       </div>
 
@@ -441,6 +477,7 @@
 
   var tabDice = document.getElementById('tab-dice');
   var tabAmida = document.getElementById('tab-amida');
+  var tabCards = document.getElementById('tab-cards');
   var tabRoulette = document.getElementById('tab-roulette');
   var rouletteGameDiv = document.getElementById('roulette-game');
   var rouletteCanvas = document.getElementById('roulette-canvas');
@@ -601,12 +638,15 @@
     amidaGameDiv.hidden = game !== 'amida';
     tabRoulette.classList.toggle('active', game === 'roulette');
     rouletteGameDiv.hidden = game !== 'roulette';
+    tabCards.classList.toggle('active', game === 'cards');
+    document.getElementById('cards-game').hidden = game !== 'cards';
     document.querySelector('.wrap').classList.toggle('wide', game === 'amida');
     roomGameNameEl.textContent = GAME_LABELS[game] || '';
 
     renderDice();
     renderAmida();
     renderRoulette();
+    renderCards();
     applyHostGating();
   }
 
@@ -630,7 +670,7 @@
       ? '👑 あなたが部屋主です（ゲームの切り替え・開始・発表などはあなただけが操作できます）'
       : '👑 部屋主: ' + hostName + '（ゲームの切り替え・開始・発表などは部屋主だけが操作できます）';
     if (isHost) return;
-    [nextRoundBtn, amidaBeginBtn, amidaRevealBtn, amidaCancelBtn, amidaAgainBtn, rouletteSpinBtn, rouletteClearBtn].forEach(function (b) { b.hidden = true; });
+    [document.getElementById('cards-setup-btn'), document.getElementById('cards-reveal-btn'), document.getElementById('cards-cancel-btn'), document.getElementById('cards-again-btn'), nextRoundBtn, amidaBeginBtn, amidaRevealBtn, amidaCancelBtn, amidaAgainBtn, rouletteSpinBtn, rouletteClearBtn].forEach(function (b) { b.hidden = true; });
     rouletteExcludeCb.disabled = true;
     if (!latestData.amida) {
       amidaSetupDiv.hidden = false;
@@ -1377,11 +1417,144 @@
     if (isConnected) socket.emit('amida_reset');
   });
 
-  [['dice', tabDice], ['amida', tabAmida], ['roulette', tabRoulette]].forEach(function (pair) {
+  [['dice', tabDice], ['amida', tabAmida], ['roulette', tabRoulette], ['cards', tabCards]].forEach(function (pair) {
     pair[1].addEventListener('click', function () {
       if (isConnected) socket.emit('switch_game', { game: pair[0] });
     });
   });
+
+  var cardsSetupDiv = document.getElementById('cards-setup');
+  var cardsBoard = document.getElementById('cards-board');
+  var cardsGrid = document.getElementById('cards-grid');
+  var cardsHint = document.getElementById('cards-hint');
+  var cardsStatus = document.getElementById('cards-status');
+  var cardsRevealBtn = document.getElementById('cards-reveal-btn');
+  var cardsSetupBtn = document.getElementById('cards-setup-btn');
+  var cardsCancelBtn = document.getElementById('cards-cancel-btn');
+  var cardsAgainBtn = document.getElementById('cards-again-btn');
+  var cardsSession = null;
+  var cardsRevealSeen = null;
+  var cardsAnimating = false;
+  var cardsTimers = [];
+
+  function cardsClearTimers() { cardsTimers.forEach(clearTimeout); cardsTimers = []; cardsAnimating = false; }
+  function cardsLater(fn, ms) { cardsTimers.push(setTimeout(fn, ms)); }
+
+  function cardsGridHTML(c, finished) {
+    var out = '';
+    for (var i = 0; i < c.n; i++) {
+      var pid = c.picks[i];
+      var mine = pid === playerId;
+      var isAtari = c.revealed && i === c.atari;
+      var cls = 'card3d' + (pid ? ' taken' : '') + (mine ? ' mine' : '') + (finished ? ' flipped disabled' : '') + (isAtari && finished ? ' atari' : '') + (c.revealed ? ' disabled' : '');
+      out += '<div class="' + cls + '" data-i="' + i + '"><div class="inner">' +
+        '<div class="face back">' + (i + 1) + '</div>' +
+        '<div class="face front">' + (c.revealed ? (isAtari ? '🎉 当たり' : 'はずれ') : '') + '</div></div>' +
+        '<div class="who">' + (pid ? escapeHtml(nameForPid(pid)) + (mine ? '（あなた）' : '') : '空き') + '</div></div>';
+    }
+    return out;
+  }
+
+  // Flip the misses one at a time; once only two cards are left (the 当たり
+  // and one miss) build up the tension, then turn both over together.
+  function playCardsReveal(c) {
+    cardsAnimating = true;
+    cardsGrid.innerHTML = cardsGridHTML(c, false);
+    cardsRevealBtn.hidden = true; cardsCancelBtn.hidden = true; cardsAgainBtn.hidden = true;
+    cardsStatus.textContent = '';
+    cardsHint.className = 'amida-hint big';
+    cardsHint.textContent = 'めくるよ…！';
+    var nodes = cardsGrid.children;
+    var n = c.order.length;
+    var singles = c.order.slice(0, n - 2);
+    var pair = c.order.slice(n - 2);
+
+    singles.forEach(function (idx, k) {
+      cardsLater(function () {
+        nodes[idx].classList.add('flipped');
+        playAmidaTones([480 + k * 45], 0.04);
+        var left = n - k - 1;
+        cardsHint.textContent = left > 2 ? 'あと' + left + '枚…' : '';
+      }, 800 + k * 500);
+    });
+
+    var pairAt = 800 + singles.length * 500 + 400;
+    cardsLater(function () {
+      cardsHint.textContent = '残り2枚…どっちだ！？';
+      pair.forEach(function (idx) { nodes[idx].classList.add('shake'); });
+      for (var t = 0; t < 9; t++) cardsLater(function () { playAmidaTones([90], 0.09); }, t * 270);
+    }, pairAt);
+
+    cardsLater(function () {
+      pair.forEach(function (idx) {
+        nodes[idx].classList.remove('shake');
+        nodes[idx].classList.add('flipped');
+      });
+      nodes[c.atari].classList.add('atari');
+      var winner = nameForPid(c.picks[c.atari]);
+      cardsHint.textContent = '🎉 当たりは ' + winner + ' さん！';
+      playFanfare(); flashScreen(); launchConfetti(4600);
+      amidaBanner.classList.add('big');
+      showAmidaBanner('🎉 ' + winner + ' が当たり！');
+      cardsLater(function () { amidaBanner.classList.remove('big'); }, 3200);
+      cardsLater(function () { cardsAnimating = false; renderCards(); }, 1500);
+    }, pairAt + 2400);
+  }
+
+  function renderCards() {
+    var c = latestData.cards;
+    cardsSetupDiv.hidden = !!c;
+    cardsBoard.hidden = !c;
+    var specs = latestData.spectators || [];
+    if (!c) {
+      cardsClearTimers();
+      cardsSession = null;
+      var count = (latestData.players || []).length - specs.length;
+      document.getElementById('cards-count-note').textContent = count + '人でカードを配ります';
+      cardsSetupBtn.disabled = count < 2;
+      if (latestData.hostId === playerId) document.getElementById('cards-err').textContent = count < 2 ? '2人以上で遊べます。参加者を待ってください。' : '';
+      return;
+    }
+    if (c.id !== cardsSession) { cardsClearTimers(); cardsSession = c.id; cardsRevealSeen = null; }
+    if (c.revealed && cardsRevealSeen !== c.id && !cardsAnimating) {
+      cardsRevealSeen = c.id;
+      if (!c.done) { playCardsReveal(c); return; }
+    }
+    if (cardsAnimating) return;
+
+    var finished = c.revealed;
+    cardsGrid.innerHTML = cardsGridHTML(c, finished);
+    var taken = c.picks.filter(function (p) { return p !== null; }).length;
+    if (finished) {
+      var wp = c.picks[c.atari];
+      cardsHint.className = 'amida-hint big';
+      cardsHint.textContent = '🎉 当たりは ' + nameForPid(wp) + ' さん！';
+      cardsStatus.textContent = '';
+    } else {
+      cardsHint.className = 'amida-hint';
+      cardsHint.textContent = specs.indexOf(playerId) !== -1 ? '観戦中です' : '好きなカードをタップして選んでください（もう一度タップで取り消し）';
+      cardsStatus.textContent = taken + ' / ' + c.n + '人が選択済み';
+    }
+    cardsRevealBtn.disabled = taken !== c.n;
+    cardsRevealBtn.hidden = finished;
+    cardsCancelBtn.hidden = finished;
+    cardsAgainBtn.hidden = !finished;
+  }
+
+  cardsGrid.addEventListener('click', function (e) {
+    var el = e.target.closest('.card3d');
+    var c = latestData && latestData.cards;
+    if (!el || !c || c.revealed || !isConnected) return;
+    if ((latestData.spectators || []).indexOf(playerId) !== -1) return;
+    var idx = parseInt(el.getAttribute('data-i'), 10);
+    var holder = c.picks[idx];
+    if (holder && holder !== playerId) return;
+    socket.emit('cards_pick', { idx: idx });
+  });
+  cardsSetupBtn.addEventListener('click', function () { if (isConnected) socket.emit('cards_setup'); });
+  cardsRevealBtn.addEventListener('click', function () { if (isConnected) socket.emit('cards_reveal'); });
+  cardsCancelBtn.addEventListener('click', function () { if (isConnected) socket.emit('cards_reset'); });
+  cardsAgainBtn.addEventListener('click', function () { if (isConnected) socket.emit('cards_reset'); });
 
   document.getElementById('member-list').addEventListener('click', function (e) {
     var chip = e.target.closest('.member-chip.pick');
@@ -1394,7 +1567,7 @@
   var chosenGame = localStorage.getItem('dice_game') || 'dice';
   var entryGamesEl = document.getElementById('entry-games');
   var roomGameNameEl = document.getElementById('room-game-name');
-  var GAME_LABELS = { dice: '🎲 ダイス対決', amida: '🪜 あみだくじ', roulette: '🎡 ルーレット' };
+  var GAME_LABELS = { dice: '🎲 ダイス対決', amida: '🪜 あみだくじ', roulette: '🎡 ルーレット', cards: '🃏 カードめくり' };
   function paintEntryGames() {
     Array.prototype.forEach.call(entryGamesEl.children, function (b) {
       b.classList.toggle('active', b.getAttribute('data-game') === chosenGame);
