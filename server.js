@@ -425,6 +425,7 @@ io.on('connection', (socket) => {
       picks: new Array(n).fill(null),
       atari: Math.floor(Math.random() * n),
       revealed: false,
+      lastFlip: null,
       done: false,
     };
     room.updatedAt = Date.now();
@@ -462,13 +463,29 @@ io.on('connection', (socket) => {
     c.revealed = true;
     room.updatedAt = Date.now();
     broadcast(joinedCode);
+  });
+
+  // The last two cards are turned over by whoever is holding one of them
+  // (the host may do it too, so a missing player can't stall the room).
+  socket.on('cards_flip_last', ({ idx }) => {
+    if (!joinedCode || !playerId) return;
+    const room = rooms.get(joinedCode);
+    const c = room && room.cards;
+    if (!c || !c.revealed || c.lastFlip !== null) return;
+    idx = Number(idx);
+    const last = c.order.slice(c.n - 2);
+    if (!last.includes(idx)) return;
+    if (c.picks[idx] !== playerId && hostOf(room) !== playerId) return;
+    c.lastFlip = idx;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
     const code = joinedCode;
     setTimeout(() => {
       const r = rooms.get(code);
       if (!r || r.cards !== c) return;
       c.done = true;
       broadcast(code);
-    }, (c.n - 2) * 500 + 800 + 2200 + 4500);
+    }, 9000);
   });
 
   socket.on('cards_reset', () => {

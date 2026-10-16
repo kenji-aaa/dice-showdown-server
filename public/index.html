@@ -1440,13 +1440,22 @@
   function cardsClearTimers() { cardsTimers.forEach(clearTimeout); cardsTimers = []; cardsAnimating = false; }
   function cardsLater(fn, ms) { cardsTimers.push(setTimeout(fn, ms)); }
 
-  function cardsGridHTML(c, finished) {
+  // finished: everything face up. waiting: misses already turned, the final
+  // two shaking until one of their holders clicks.
+  function cardsGridHTML(c, finished, waiting) {
     var out = '';
-    for (var i = 0; i < c.n; i++) {
+    var n = c.n;
+    var lastTwo = c.revealed ? c.order.slice(n - 2) : [];
+    var singles = c.revealed ? c.order.slice(0, n - 2) : [];
+    for (var i = 0; i < n; i++) {
       var pid = c.picks[i];
       var mine = pid === playerId;
       var isAtari = c.revealed && i === c.atari;
-      var cls = 'card3d' + (pid ? ' taken' : '') + (mine ? ' mine' : '') + (finished ? ' flipped disabled' : '') + (isAtari && finished ? ' atari' : '') + (c.revealed ? ' disabled' : '');
+      var up = finished || (waiting && singles.indexOf(i) !== -1);
+      var shake = waiting && lastTwo.indexOf(i) !== -1;
+      var live = shake && (mine || latestData.hostId === playerId);
+      var cls = 'card3d' + (pid ? ' taken' : '') + (mine ? ' mine' : '') + (up ? ' flipped' : '') +
+        (isAtari && finished ? ' atari' : '') + (shake ? ' shake' : '') + ((c.revealed && !live) ? ' disabled' : '');
       out += '<div class="' + cls + '" data-i="' + i + '"><div class="inner">' +
         '<div class="face back">' + (i + 1) + '</div>' +
         '<div class="face front">' + (c.revealed ? (isAtari ? '🎉 当たり' : 'はずれ') : '') + '</div></div>' +
@@ -1455,11 +1464,21 @@
     return out;
   }
 
-  // Flip the misses one at a time; once only two cards are left (the 当たり
-  // and one miss) build up the tension, then turn both over together.
+  function cardsCelebrate(c) {
+    var winner = nameForPid(c.picks[c.atari]);
+    cardsHint.className = 'amida-hint big';
+    cardsHint.textContent = '🎉 当たりは ' + winner + ' さん！';
+    playFanfare(); flashScreen(); launchConfetti(4600);
+    amidaBanner.classList.add('big');
+    showAmidaBanner('🎉 ' + winner + ' が当たり！');
+    cardsLater(function () { amidaBanner.classList.remove('big'); }, 3200);
+  }
+
+  // Step 1: turn the misses over one at a time, then stop with the last two
+  // cards shaking and wait for one of their holders to click.
   function playCardsReveal(c) {
     cardsAnimating = true;
-    cardsGrid.innerHTML = cardsGridHTML(c, false);
+    cardsGrid.innerHTML = cardsGridHTML(c, false, false);
     cardsRevealBtn.hidden = true; cardsCancelBtn.hidden = true; cardsAgainBtn.hidden = true;
     cardsStatus.textContent = '';
     cardsHint.className = 'amida-hint big';
@@ -1467,8 +1486,6 @@
     var nodes = cardsGrid.children;
     var n = c.order.length;
     var singles = c.order.slice(0, n - 2);
-    var pair = c.order.slice(n - 2);
-
     singles.forEach(function (idx, k) {
       cardsLater(function () {
         nodes[idx].classList.add('flipped');
@@ -1477,29 +1494,36 @@
         cardsHint.textContent = left > 2 ? 'あと' + left + '枚…' : '';
       }, 800 + k * 500);
     });
-
-    var pairAt = 800 + singles.length * 500 + 400;
-    cardsLater(function () {
-      cardsHint.textContent = '残り2枚…どっちだ！？';
-      pair.forEach(function (idx) { nodes[idx].classList.add('shake'); });
-      for (var t = 0; t < 9; t++) cardsLater(function () { playAmidaTones([90], 0.09); }, t * 270);
-    }, pairAt);
-
-    cardsLater(function () {
-      pair.forEach(function (idx) {
-        nodes[idx].classList.remove('shake');
-        nodes[idx].classList.add('flipped');
-      });
-      nodes[c.atari].classList.add('atari');
-      var winner = nameForPid(c.picks[c.atari]);
-      cardsHint.textContent = '🎉 当たりは ' + winner + ' さん！';
-      playFanfare(); flashScreen(); launchConfetti(4600);
-      amidaBanner.classList.add('big');
-      showAmidaBanner('🎉 ' + winner + ' が当たり！');
-      cardsLater(function () { amidaBanner.classList.remove('big'); }, 3200);
-      cardsLater(function () { cardsAnimating = false; renderCards(); }, 1500);
-    }, pairAt + 2400);
+    cardsLater(function () { cardsAnimating = false; renderCards(); }, 800 + singles.length * 500 + 500);
   }
+
+  // Step 2: the clicked card turns over; then its partner.
+  function playLastFlip(c) {
+    cardsAnimating = true;
+    cardsRevealBtn.hidden = true; cardsCancelBtn.hidden = true; cardsAgainBtn.hidden = true;
+    cardsStatus.textContent = '';
+    cardsGrid.innerHTML = cardsGridHTML(c, false, true);
+    var nodes = cardsGrid.children;
+    var other = c.order.slice(c.n - 2).filter(function (i) { return i !== c.lastFlip; })[0];
+    var clickedAtari = c.lastFlip === c.atari;
+    cardsHint.className = 'amida-hint big';
+    cardsHint.textContent = nameForPid(c.picks[c.lastFlip]) + ' さんのカードをめくります…';
+    for (var t = 0; t < 8; t++) cardsLater(function () { playAmidaTones([90], 0.09); }, t * 240);
+    cardsLater(function () {
+      nodes[c.lastFlip].classList.remove('shake');
+      nodes[c.lastFlip].classList.add('flipped');
+      if (clickedAtari) { nodes[c.lastFlip].classList.add('atari'); cardsCelebrate(c); }
+      else { cardsHint.textContent = 'はずれ…！ということは…'; playAmidaTones([300, 240], 0.15); }
+    }, 2000);
+    cardsLater(function () {
+      nodes[other].classList.remove('shake');
+      nodes[other].classList.add('flipped');
+      if (!clickedAtari) { nodes[other].classList.add('atari'); cardsCelebrate(c); }
+    }, clickedAtari ? 3600 : 4000);
+    cardsLater(function () { cardsAnimating = false; renderCards(); }, clickedAtari ? 5200 : 5600);
+  }
+
+  var cardsLastSeen = null;
 
   function renderCards() {
     var c = latestData.cards;
@@ -1515,38 +1539,57 @@
       if (latestData.hostId === playerId) document.getElementById('cards-err').textContent = count < 2 ? '2人以上で遊べます。参加者を待ってください。' : '';
       return;
     }
-    if (c.id !== cardsSession) { cardsClearTimers(); cardsSession = c.id; cardsRevealSeen = null; }
+    if (c.id !== cardsSession) { cardsClearTimers(); cardsSession = c.id; cardsRevealSeen = null; cardsLastSeen = null; }
+
     if (c.revealed && cardsRevealSeen !== c.id && !cardsAnimating) {
       cardsRevealSeen = c.id;
-      if (!c.done) { playCardsReveal(c); return; }
+      if (!c.done && c.lastFlip === null) { playCardsReveal(c); return; }
     }
     if (cardsAnimating) return;
+    if (c.revealed && c.lastFlip !== null && cardsLastSeen !== c.id) {
+      cardsLastSeen = c.id;
+      if (!c.done) { playLastFlip(c); return; }
+    }
 
-    var finished = c.revealed;
-    cardsGrid.innerHTML = cardsGridHTML(c, finished);
+    var finished = c.revealed && c.lastFlip !== null;
+    var waiting = c.revealed && c.lastFlip === null;
+    cardsGrid.innerHTML = cardsGridHTML(c, finished, waiting);
     var taken = c.picks.filter(function (p) { return p !== null; }).length;
     if (finished) {
-      var wp = c.picks[c.atari];
       cardsHint.className = 'amida-hint big';
-      cardsHint.textContent = '🎉 当たりは ' + nameForPid(wp) + ' さん！';
+      cardsHint.textContent = '🎉 当たりは ' + nameForPid(c.picks[c.atari]) + ' さん！';
       cardsStatus.textContent = '';
+    } else if (waiting) {
+      var last = c.order.slice(c.n - 2);
+      var iHold = last.some(function (i) { return c.picks[i] === playerId; });
+      var names = last.map(function (i) { return nameForPid(c.picks[i]); }).join(' さんと ');
+      cardsHint.className = 'amida-hint big';
+      cardsHint.textContent = iHold ? '👉 残り2枚！あなたのカードをクリックしてめくって！' : '残り2枚！' + names + ' さんのどちらかがめくります…';
+      cardsStatus.textContent = latestData.hostId === playerId && !iHold ? '（反応がなければ、部屋主が代わりにどちらかをクリックできます）' : '';
     } else {
       cardsHint.className = 'amida-hint';
       cardsHint.textContent = specs.indexOf(playerId) !== -1 ? '観戦中です' : '好きなカードをタップして選んでください（もう一度タップで取り消し）';
       cardsStatus.textContent = taken + ' / ' + c.n + '人が選択済み';
     }
     cardsRevealBtn.disabled = taken !== c.n;
-    cardsRevealBtn.hidden = finished;
-    cardsCancelBtn.hidden = finished;
+    cardsRevealBtn.hidden = c.revealed;
+    cardsCancelBtn.hidden = c.revealed && finished;
     cardsAgainBtn.hidden = !finished;
   }
 
   cardsGrid.addEventListener('click', function (e) {
     var el = e.target.closest('.card3d');
     var c = latestData && latestData.cards;
-    if (!el || !c || c.revealed || !isConnected) return;
-    if ((latestData.spectators || []).indexOf(playerId) !== -1) return;
+    if (!el || !c || !isConnected || cardsAnimating) return;
     var idx = parseInt(el.getAttribute('data-i'), 10);
+    if (c.revealed) {
+      if (c.lastFlip !== null) return;
+      if (c.order.slice(c.n - 2).indexOf(idx) === -1) return;
+      if (c.picks[idx] !== playerId && latestData.hostId !== playerId) return;
+      socket.emit('cards_flip_last', { idx: idx });
+      return;
+    }
+    if ((latestData.spectators || []).indexOf(playerId) !== -1) return;
     var holder = c.picks[idx];
     if (holder && holder !== playerId) return;
     socket.emit('cards_pick', { idx: idx });
