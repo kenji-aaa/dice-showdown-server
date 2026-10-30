@@ -302,19 +302,18 @@
   .race-result.pop .row { animation: row-in 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
   @keyframes row-in { from { opacity: 0; transform: translateX(-40px) scale(0.9); } to { opacity: 1; transform: none; } }
   .race-map { display: none; }
-  .race-led { position: relative; margin: 12px 0 4px; padding: 10px 16px 8px; background: #080808; border: 4px solid #2c2c2c; border-radius: 12px; overflow: hidden;
-    font-family: "DotGothic16", "Zen Maru Gothic", monospace; color: #ffa21a; text-shadow: 0 0 7px rgba(255,140,0,0.95);
+  .race-led { position: relative; margin: 12px 0 4px; padding: 14px 20px 10px; background: #050505; border: 4px solid #2c2c2c; border-radius: 12px; overflow: hidden;
+    font-family: "DotGothic16", "Zen Maru Gothic", monospace; color: #ffb52e; text-shadow: 0 0 4px rgba(255,170,40,0.7);
     box-shadow: inset 0 0 26px rgba(255,140,0,0.18), 0 6px 16px rgba(0,0,0,0.35); animation: led-in 0.5s ease-out; }
-  .race-led::after { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(circle, transparent 42%, rgba(0,0,0,0.6) 46%); background-size: 4px 4px; }
-  .led-head { display: flex; justify-content: space-between; align-items: center; font-size: 15px; margin-bottom: 4px; }
+  .led-head { display: flex; justify-content: space-between; align-items: center; font-size: 18px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid #4a3410; color: #ffd36b; }
   .led-judge { animation: led-blink 0.5s steps(2) infinite; }
-  .led-ok { color: #4a2a1a; text-shadow: none; }
+  .led-ok { color: #6b4a2a; text-shadow: none; }
   .led-ok.on { color: #ff4a3a; text-shadow: 0 0 10px #ff2a1a; }
-  .led-row { display: flex; align-items: center; gap: 14px; font-size: 24px; line-height: 1.5; opacity: 0.3; }
+  .led-row { display: flex; align-items: center; gap: 18px; font-size: 32px; line-height: 1.55; opacity: 0.4; }
   .led-row.on { opacity: 1; animation: led-flash 0.7s steps(2) 2; }
-  .led-row.win { color: #fff36b; text-shadow: 0 0 12px #ffe14a; }
-  .led-rk { width: 2.6em; }
-  .led-num { display: inline-block; min-width: 1.5em; text-align: center; border-radius: 6px; color: #fff; text-shadow: none; font-size: 0.85em; padding: 0 3px; }
+  .led-row.win { color: #fff36b; text-shadow: 0 0 8px #ffe14a; }
+  .led-rk { width: 2.4em; font-weight: 700; }
+  .led-num { display: inline-block; min-width: 1.6em; text-align: center; border-radius: 6px; color: #fff; text-shadow: none; font-size: 0.8em; line-height: 1.4; padding: 0 4px; }
   @keyframes led-blink { 50% { opacity: 0.15; } }
   @keyframes led-flash { 50% { filter: brightness(2.2); } }
   @keyframes led-in { from { transform: translateY(-16px); opacity: 0; } }
@@ -2168,11 +2167,9 @@
           var top = Math.min(5, r.horses.length);
           raceCall.textContent = 'ゴール！！';
           raceStanding.textContent = '';
-          playCrash(); flashScreen(); raceRing();
           if (raceCrowd) { raceCrowd.stop(true); raceCrowd = null; }
           raceBoardEl.classList.remove('race-shake');
           raceLanes.style.transform = '';
-          raceBig('ゴール！！', 'gold', 1300);
           // lag, then the 電光掲示板 announces the finishing order from the bottom up
           raceLater(function () {
             raceCall.textContent = '📷 写真判定中…';
