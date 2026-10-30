@@ -279,7 +279,29 @@
   .race-map .bar .fin { position: absolute; right: 4px; top: 0; line-height: 20px; font-size: 14px; }
   .race-map .dot { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.25); }
   .race-map .dot.lead { width: 16px; height: 16px; margin: -8px 0 0 -8px; z-index: 2; }
-  .race-lanes { display: flex; flex-direction: column; gap: 4px; padding: 10px 0; background: linear-gradient(180deg, color-mix(in srgb, var(--felt) 10%, transparent), transparent); border-radius: 12px; }
+  .race-fx { position: fixed; inset: 0; z-index: 58; pointer-events: none; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .race-fx::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 50% 45%, rgba(0,0,0,0.2), rgba(0,0,0,0.82)); opacity: 0; transition: opacity 0.5s; }
+  .race-fx.dark::before { opacity: 1; }
+  .race-fx .vig { position: absolute; inset: 0; opacity: var(--vig, 0); transition: opacity 0.3s; background: radial-gradient(ellipse at center, transparent 50%, rgba(225,20,20,0.6)); animation: fx-beat 0.5s ease-in-out infinite alternate; }
+  .race-fx .vig.dim { background: radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.78)); animation: none; }
+  @keyframes fx-beat { from { filter: brightness(0.8); } to { filter: brightness(1.35); } }
+  .race-lanes .speed { position: absolute; top: 0; bottom: 0; left: 104px; right: 0; pointer-events: none; border-radius: 0 12px 12px 0; opacity: var(--spd, 0); transition: opacity 0.6s;
+    background: repeating-linear-gradient(0deg, transparent 0 29px, rgba(90,70,50,0.5) 29px 31px, transparent 31px 67px, rgba(90,70,50,0.4) 67px 69px, transparent 69px 113px);
+    -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 110px, transparent 110px 360px); mask-image: repeating-linear-gradient(90deg, #000 0 110px, transparent 110px 360px);
+    -webkit-mask-size: 360px 100%; mask-size: 360px 100%; animation: fx-speed 0.28s linear infinite; }
+  @keyframes fx-speed { from { -webkit-mask-position: 0 0; mask-position: 0 0; } to { -webkit-mask-position: -360px 0; mask-position: -360px 0; } }
+  .race-fx .big { position: absolute; font-family: "Zen Maru Gothic", sans-serif; font-weight: 900; font-size: clamp(56px, 13vw, 170px); line-height: 1.1; white-space: nowrap; color: #fff; letter-spacing: 0.04em;
+    -webkit-text-stroke: 10px #c4121c; paint-order: stroke fill; text-shadow: 0 10px 0 #7a0d12, 0 0 50px rgba(255,205,0,0.9); animation: fx-pop 1.1s cubic-bezier(0.2, 1.5, 0.4, 1) forwards; }
+  .race-fx .big.gold { -webkit-text-stroke-color: #b57a00; text-shadow: 0 10px 0 #6b4a00, 0 0 60px rgba(255,230,80,1); }
+  .race-fx .big.mid { font-size: clamp(40px, 8.5vw, 110px); }
+  @keyframes fx-pop { 0% { transform: scale(3.4) rotate(-7deg); opacity: 0; } 22% { transform: scale(1) rotate(0); opacity: 1; } 78% { transform: scale(1.04); opacity: 1; } 100% { transform: scale(0.92); opacity: 0; } }
+  .race-fx .ring { position: absolute; left: 50%; top: 50%; width: 20px; height: 20px; border-radius: 50%; border: 12px solid #fff; transform: translate(-50%, -50%); animation: fx-ring 0.8s ease-out forwards; }
+  @keyframes fx-ring { to { width: 150vmax; height: 150vmax; opacity: 0; border-width: 2px; } }
+  .race-shake { animation: fx-shake 0.11s linear infinite; }
+  @keyframes fx-shake { 0% { transform: translate(0, 0); } 25% { transform: translate(-3px, 2px); } 50% { transform: translate(3px, -2px); } 75% { transform: translate(-2px, -3px); } 100% { transform: translate(0, 0); } }
+  .race-result.pop .row { animation: row-in 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+  @keyframes row-in { from { opacity: 0; transform: translateX(-40px) scale(0.9); } to { opacity: 1; transform: none; } }
+  .race-lanes { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 10px 0; background: linear-gradient(180deg, color-mix(in srgb, var(--felt) 10%, transparent), transparent); border-radius: 12px; }
   .race-lane { display: flex; align-items: center; gap: 8px; }
   .race-name { width: 96px; flex-shrink: 0; text-align: right; font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 6px; }
   .race-lane.me .race-name { text-decoration: underline; }
@@ -923,6 +945,86 @@
     o.start(t0);
     o.stop(t0 + 0.25);
   }
+  function playKick(vol) {
+    var ctx = getAmidaAudioCtx();
+    if (!ctx) return;
+    var t0 = ctx.currentTime;
+    var o = ctx.createOscillator();
+    var g = ctx.createGain();
+    o.frequency.setValueAtTime(140, t0);
+    o.frequency.exponentialRampToValueAtTime(40, t0 + 0.14);
+    g.gain.setValueAtTime(vol || 0.5, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
+    o.connect(g).connect(ctx.destination);
+    o.start(t0);
+    o.stop(t0 + 0.22);
+  }
+  function playRiser(sec) {
+    var ctx = getAmidaAudioCtx();
+    if (!ctx) return;
+    var t0 = ctx.currentTime;
+    var o = ctx.createOscillator();
+    var lp = ctx.createBiquadFilter();
+    var g = ctx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(180, t0);
+    o.frequency.exponentialRampToValueAtTime(1400, t0 + sec);
+    lp.type = 'lowpass';
+    lp.frequency.value = 2200;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.14, t0 + sec * 0.9);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + sec + 0.08);
+    o.connect(lp).connect(g).connect(ctx.destination);
+    o.start(t0);
+    o.stop(t0 + sec + 0.1);
+  }
+  function playCrash() {
+    var ctx = getAmidaAudioCtx();
+    if (!ctx) return;
+    var t0 = ctx.currentTime;
+    var len = Math.floor(ctx.sampleRate * 1.6);
+    var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    var hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 5000;
+    var g = ctx.createGain();
+    g.gain.value = 0.5;
+    src.connect(hp).connect(g).connect(ctx.destination);
+    src.start(t0);
+  }
+  // Crowd noise that swells while the race runs; returns { level(x), stop(burst) }.
+  function startCrowd() {
+    var ctx = getAmidaAudioCtx();
+    if (!ctx) return null;
+    var len = ctx.sampleRate * 2;
+    var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 900;
+    bp.Q.value = 0.6;
+    var g = ctx.createGain();
+    g.gain.value = 0.0001;
+    src.connect(bp).connect(g).connect(ctx.destination);
+    src.start();
+    return {
+      level: function (x) { g.gain.setTargetAtTime(0.02 + 0.13 * x, ctx.currentTime, 0.25); },
+      stop: function (burst) {
+        var t = ctx.currentTime;
+        if (burst) { g.gain.setTargetAtTime(0.32, t, 0.05); g.gain.setTargetAtTime(0.0001, t + 1.2, 0.5); }
+        else g.gain.setTargetAtTime(0.0001, t, 0.15);
+        setTimeout(function () { try { src.stop(); } catch (e) {} }, 3500);
+      }
+    };
+  }
   function playAtariChime() { playAmidaTones([523.25, 659.25, 783.99, 1046.5], 0.14); }
   function playHazureBlip() { playAmidaTones([349.23, 293.66], 0.12); }
 
@@ -1549,8 +1651,51 @@
   var raceAnim = false;
   var raceRaf = null;
   var raceTimers = [];
+  var raceBoardEl = document.getElementById('race-board');
+
+  var raceFx = null;
+  var raceCrowd = null;
+  function raceFxEl() {
+    if (!raceFx) {
+      raceFx = document.createElement('div');
+      raceFx.className = 'race-fx';
+      raceFx.innerHTML = '<div class="vig"></div>';
+      document.body.appendChild(raceFx);
+    }
+    return raceFx;
+  }
+  function raceBig(text, cls, ms) {
+    var d = document.createElement('div');
+    d.className = 'big' + (cls ? ' ' + cls : '');
+    d.textContent = text;
+    d.style.animationDuration = (ms || 1100) + 'ms';
+    raceFxEl().appendChild(d);
+    setTimeout(function () { d.remove(); }, (ms || 1100) + 100);
+  }
+  function raceRing() {
+    var d = document.createElement('div');
+    d.className = 'ring';
+    raceFxEl().appendChild(d);
+    setTimeout(function () { d.remove(); }, 900);
+  }
+  function raceFxOff() {
+    var el = raceFx;
+    raceFx = null;
+    if (raceCrowd) { raceCrowd.stop(false); raceCrowd = null; }
+    var board = document.getElementById('race-board');
+    if (board) board.classList.remove('race-shake');
+    raceLanes.style.transform = '';
+    if (el) {
+      el.classList.remove('dark');
+      el.style.setProperty('--vig', '0');
+      raceLanes.style.setProperty('--spd', '0');
+      setTimeout(function () { el.remove(); }, 3000);
+    }
+  }
+  var raceFreshReveal = false;
 
   function raceStop() {
+    raceFxOff();
     if (raceRaf) cancelAnimationFrame(raceRaf);
     raceRaf = null;
     raceTimers.forEach(clearTimeout);
@@ -1560,7 +1705,7 @@
   function raceLater(fn, ms) { raceTimers.push(setTimeout(fn, ms)); }
 
   function raceLanesHTML(r, ranks) {
-    return r.horses.map(function (hs, i) {
+    return '<div class="speed"></div>' + r.horses.map(function (hs, i) {
       var me = hs.id === playerId;
       var medal = ranks ? (ranks[i] === 1 ? '🥇 ' : ranks[i] === 2 ? '🥈 ' : ranks[i] === 3 ? '🥉 ' : ranks[i] + '位 ') : '';
       return '<div class="race-lane' + (me ? ' me' : '') + '"><div class="race-name" style="color:' + RACE_COLORS[i % RACE_COLORS.length] + '">' + medal + escapeHtml(hs.name) + '</div>' +
@@ -1648,6 +1793,11 @@
     raceCall.textContent = '🏆 優勝は ' + w.name + ' さん！';
     raceStanding.textContent = '';
     raceResult.innerHTML = raceResultHTML(r);
+    raceResult.classList.toggle('pop', raceFreshReveal);
+    if (raceFreshReveal) {
+      Array.prototype.forEach.call(raceResult.children, function (row, k) { row.style.animationDelay = (k * 0.13) + 's'; });
+      raceFreshReveal = false;
+    }
   }
 
   function racePlay(r) {
@@ -1667,12 +1817,20 @@
     // fanfare -> 位置について -> よーい -> pistol
     raceCall.className = 'race-call count small';
     raceCall.textContent = '🎺 まもなく発走！';
+    raceFxEl().classList.add('dark');
+    raceBig('まもなく発走！', 'mid gold', 2600);
     playBrassFanfare();
-    raceLater(function () { raceCall.textContent = '位置について…'; playAmidaTones([196], 0.2); }, 4600);
-    raceLater(function () { raceCall.textContent = 'よーい…'; playAmidaTones([261.63], 0.2); }, 5800);
+    raceLater(function () { raceCall.textContent = '位置について…'; raceBig('位置について…', 'mid', 1200); playKick(0.6); }, 4600);
+    raceLater(function () { raceCall.textContent = 'よーい…'; raceBig('よーい…', 'mid', 1700); playKick(0.7); }, 5800);
 
     raceLater(function () {
-      playPistol(); flashScreen();
+      playPistol(); flashScreen(); raceRing();
+      raceFxEl().classList.remove('dark');
+      raceBig('GO!!', 'gold', 1000);
+      raceLanes.style.setProperty('--spd', '0.35');
+      raceCrowd = startCrowd();
+      raceBoardEl.classList.add('race-shake');
+      raceLater(function () { raceBoardEl.classList.remove('race-shake'); }, 600);
       raceCall.className = 'race-call count small';
       raceCall.textContent = '🔫 スタート！';
       raceLater(function () { raceCall.className = 'race-call'; }, 900);
@@ -1709,15 +1867,34 @@
           horses[k].classList.toggle('leader', k === lead && cur[lead] < 1000);
         }
 
+        if (document.getElementById('race-game').hidden) { raceStop(); return; }
         var remNow = raceMapUpdate(dots, cur, lead);
+        var prog = cur[lead] / 1000;
         if (!winnerDone && nextMs < MILES.length && remNow <= MILES[nextMs] && remNow > 0) {
-          raceCall.textContent = '🏁 ゴールまで あと ' + MILES[nextMs] + 'm！';
-          playAmidaTones([880], 0.1);
+          var ms = MILES[nextMs];
+          raceCall.textContent = '🏁 ゴールまで あと ' + ms + 'm！';
           lastCallAt = now;
+          if (ms <= 500) {
+            raceBig(ms === 200 ? 'ラスト200m！' : 'あと' + ms + 'm！', ms <= 200 ? '' : 'mid', ms <= 200 ? 1200 : 1000);
+            playRiser(1.0);
+          } else {
+            playAmidaTones([880], 0.1);
+          }
           nextMs++;
         }
-
-        if (now - lastHoof > 260) { lastHoof = now; playAmidaTones([95 + Math.random() * 20], 0.05); }
+        // mood: speed lines build, red vignette + shake in the home stretch, dark zoom in the photo finish
+        var fxEl = raceFxEl();
+        var slow = rate < 1 ? (1 - rate) / 0.7 : 0;
+        raceLanes.style.setProperty('--spd', String(winnerDone ? 0 : 0.3 + 0.5 * prog));
+        var vigEl = fxEl.querySelector('.vig');
+        vigEl.classList.toggle('dim', slow > 0.05);
+        fxEl.style.setProperty('--vig', winnerDone ? '0' : slow > 0.05 ? String(0.4 + 0.6 * slow) : remNow <= 400 ? '0.8' : '0');
+        raceBoardEl.classList.toggle('race-shake', !winnerDone && remNow <= 300 && slow < 0.05);
+        raceLanes.style.transformOrigin = '85% 50%';
+        raceLanes.style.transform = slow > 0 ? 'scale(' + (1 + 0.05 * slow) + ')' : '';
+        if (raceCrowd) raceCrowd.level(prog);
+        var hoofGap = 270 - 130 * prog;
+        if (now - lastHoof > hoofGap) { lastHoof = now; playKick(0.1 + 0.18 * prog); }
 
         if (lead !== leader && cur[lead] > 40 && !winnerDone) {
           if (leader !== -1 && now - lastCallAt > 900) {
@@ -1732,10 +1909,15 @@
           winnerDone = true;
           var win = r.horses[r.order[0]];
           raceCall.textContent = '🏆 ゴール！ ' + win.name + ' さんが優勝！';
-          playFanfare(); flashScreen(); launchConfetti(4600);
-          amidaBanner.classList.add('big');
-          showAmidaBanner('🏆 ' + win.name + ' 優勝！');
-          raceLater(function () { amidaBanner.classList.remove('big'); }, 3200);
+          playCrash(); playFanfare(); flashScreen(); raceRing(); launchConfetti(5200);
+          raceLater(function () { launchConfetti(3000); playFanfare(); flashScreen(); }, 1500);
+          if (raceCrowd) { raceCrowd.stop(true); raceCrowd = null; }
+          raceBoardEl.classList.remove('race-shake');
+          raceLanes.style.transform = '';
+          raceFxEl().classList.add('dark');
+          raceBig('ゴール！！', 'gold', 1300);
+          raceLater(function () { raceBig('🏆 ' + win.name, 'gold', 2800); }, 1300);
+          raceLater(function () { raceBig('優勝！！', 'gold', 1800); }, 2300);
         }
 
         var ranksNow = raceRanks(r);
@@ -1744,7 +1926,7 @@
 
         if (s >= S - 1) {
           raceRaf = null;
-          raceLater(function () { raceAnim = false; renderRace(); }, 1500);
+          raceLater(function () { raceAnim = false; raceFreshReveal = true; raceFxOff(); renderRace(); }, 4600);
           return;
         }
         raceRaf = requestAnimationFrame(frame);
