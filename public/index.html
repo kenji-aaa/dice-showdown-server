@@ -301,6 +301,9 @@
   @keyframes fx-shake { 0% { transform: translate(0, 0); } 25% { transform: translate(-3px, 2px); } 50% { transform: translate(3px, -2px); } 75% { transform: translate(-2px, -3px); } 100% { transform: translate(0, 0); } }
   .race-result.pop .row { animation: row-in 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
   @keyframes row-in { from { opacity: 0; transform: translateX(-40px) scale(0.9); } to { opacity: 1; transform: none; } }
+  .race-map { display: none; }
+  .race-lanes.stage { display: block; padding: 0; line-height: 0; background: #2e7d32; border-radius: 14px; overflow: hidden; box-shadow: 0 6px 18px rgba(0,0,0,0.25); }
+  .race-canvas { width: 100%; height: auto; display: block; }
   .race-lanes { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 10px 0; background: linear-gradient(180deg, color-mix(in srgb, var(--felt) 10%, transparent), transparent); border-radius: 12px; }
   .race-lane { display: flex; align-items: center; gap: 8px; }
   .race-name { width: 96px; flex-shrink: 0; text-align: right; font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 6px; }
@@ -1688,7 +1691,6 @@
     if (el) {
       el.classList.remove('dark');
       el.style.setProperty('--vig', '0');
-      raceLanes.style.setProperty('--spd', '0');
       setTimeout(function () { el.remove(); }, 3000);
     }
   }
@@ -1704,52 +1706,246 @@
   }
   function raceLater(fn, ms) { raceTimers.push(setTimeout(fn, ms)); }
 
-  function raceLanesHTML(r, ranks) {
-    return '<div class="speed"></div>' + r.horses.map(function (hs, i) {
-      var me = hs.id === playerId;
-      var medal = ranks ? (ranks[i] === 1 ? '🥇 ' : ranks[i] === 2 ? '🥈 ' : ranks[i] === 3 ? '🥉 ' : ranks[i] + '位 ') : '';
-      return '<div class="race-lane' + (me ? ' me' : '') + '"><div class="race-name" style="color:' + RACE_COLORS[i % RACE_COLORS.length] + '">' + medal + escapeHtml(hs.name) + '</div>' +
-        '<div class="race-track"><div class="race-world"><div class="race-horse" data-i="' + i + '"><span>🐎</span></div><div class="race-goal"></div></div></div></div>';
-    }).join('');
-  }
-
-  // Course length = several screen widths, so the goal starts far off to the right.
-  function raceSetWorld(factor) {
-    var track = raceLanes.querySelector('.race-track');
-    var viewW = track ? track.clientWidth : 600;
-    var W = Math.max(2800, Math.round(viewW * 5));
-    raceLanes.style.setProperty('--w', String(W));
-    raceLanes.style.setProperty('--cam', '0');
-    return { viewW: viewW, W: W };
-  }
-  function raceCam(world, leaderFrac, cam, snap) {
-    var leaderX = leaderFrac * (world.W - 34);
-    var q = Math.max(0, Math.min(1, (leaderFrac - 0.6) / 0.3));
-    var off = 0.62 - 0.32 * q * q * (3 - 2 * q);
-    var target = Math.max(0, Math.min(world.W - world.viewW, leaderX - world.viewW * off));
-    var next = snap ? target : cam + (target - cam) * 0.14;
-    raceLanes.style.setProperty('--cam', String(next));
-    return next;
-  }
-
+  // ---- Derby-Stallion-style side view, drawn on a canvas ----
   var RACE_METERS = 1600;
-  function raceMapBuild(r) {
-    var m = document.getElementById('race-map');
-    m.innerHTML = '<div class="txt" id="race-remain"></div><div class="bar" id="race-bar"><span class="fin">🏁</span>' +
-      r.horses.map(function (hs, i) { return '<span class="dot" style="background:' + RACE_COLORS[i % RACE_COLORS.length] + '"></span>'; }).join('') + '</div>';
-    return Array.prototype.slice.call(m.querySelectorAll('.dot'));
+  var RC_W = 960, RC_H = 500, RC_START = 110, RC_COURSE = 9000;
+  var RACE_COATS = ['#7a4a2a', '#a0522d', '#2b2420', '#a8a39a', '#c8a060'];
+  var RACE_FONT = '"Zen Maru Gothic","Noto Sans JP",sans-serif';
+  var raceCanvas = null;
+  var raceCtx = null;
+
+  function raceLanesHTML() { return '<canvas class="race-canvas" id="race-canvas"></canvas>'; }
+
+  function raceCanvasInit() {
+    raceLanes.classList.add('stage');
+    raceCanvas = document.getElementById('race-canvas');
+    var w = raceLanes.clientWidth || 800;
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    raceCanvas.width = Math.round(w * dpr);
+    raceCanvas.height = Math.round(w * dpr * RC_H / RC_W);
+    raceCtx = raceCanvas.getContext('2d');
+    var k = raceCanvas.width / RC_W;
+    raceCtx.setTransform(k, 0, 0, k, 0, 0);
   }
-  function raceMapUpdate(dots, cur, lead) {
-    var bar = document.getElementById('race-bar');
-    var bw = bar ? bar.clientWidth - 24 : 0;
-    dots.forEach(function (el, i) {
-      el.style.left = (12 + (cur[i] / 1000) * bw) + 'px';
-      el.classList.toggle('lead', i === lead);
+
+  // Keep the whole pack in frame when it fits; otherwise follow the leader. Near the end,
+  // shift the view ahead so the goal comes into sight.
+  function raceCamX(lf, tf, cam, snap) {
+    var q = Math.max(0, Math.min(1, (lf - 0.6) / 0.3));
+    var off = 0.66 - 0.2 * q * q * (3 - 2 * q);
+    var leaderX = RC_START + lf * RC_COURSE;
+    var tailX = RC_START + tf * RC_COURSE;
+    var max = RC_START + RC_COURSE + 300 - RC_W;
+    var want = Math.max(Math.min(leaderX - RC_W * off, tailX - RC_W * 0.07), leaderX - RC_W * 0.9);
+    var target = Math.max(0, Math.min(max, want));
+    return snap ? target : cam + (target - cam) * 0.12;
+  }
+
+  function raceHash(n) { var x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); }
+  function raceRoundRect(c, x, y, w, hh, r) {
+    c.beginPath();
+    c.moveTo(x + r, y); c.lineTo(x + w - r, y); c.quadraticCurveTo(x + w, y, x + w, y + r);
+    c.lineTo(x + w, y + hh - r); c.quadraticCurveTo(x + w, y + hh, x + w - r, y + hh);
+    c.lineTo(x + r, y + hh); c.quadraticCurveTo(x, y + hh, x, y + hh - r);
+    c.lineTo(x, y + r); c.quadraticCurveTo(x, y, x + r, y); c.closePath();
+  }
+
+  function raceDrawHorse(c, x, y, s, ph, num, coat, silk, striped, lead, moving) {
+    c.save();
+    c.translate(x, y);
+    c.scale(s, s);
+    c.fillStyle = 'rgba(0,0,0,0.25)';
+    c.beginPath(); c.ellipse(0, 1, 27, 4, 0, 0, 6.3); c.fill();
+    if (lead) {
+      var g = c.createRadialGradient(0, -26, 4, 0, -26, 56);
+      g.addColorStop(0, 'rgba(255,225,90,0.6)');
+      g.addColorStop(1, 'rgba(255,225,90,0)');
+      c.fillStyle = g; c.beginPath(); c.arc(0, -26, 56, 0, 6.3); c.fill();
+    }
+    c.translate(0, moving ? -Math.abs(Math.sin(ph)) * 3 : 0);
+    var dark = 'rgba(0,0,0,0.45)';
+    var leg = function (hx, off, col) {
+      var a = moving ? Math.sin(ph + off) : 0;
+      var lift = moving ? Math.max(0, Math.cos(ph + off)) : 0;
+      var kx = hx + a * 9;
+      var fx = kx + a * 7 - lift * 3;
+      c.strokeStyle = col; c.lineCap = 'round'; c.lineJoin = 'round'; c.lineWidth = 3.8;
+      c.beginPath(); c.moveTo(hx, -18); c.lineTo(kx, -10 - lift * 3); c.lineTo(fx, -1 - lift * 8); c.stroke();
+    };
+    leg(-8, 0.6, coat); leg(8, Math.PI + 0.6, coat);
+    c.fillStyle = dark; c.globalAlpha = 0.35;
+    c.globalAlpha = 1;
+    // tail
+    c.strokeStyle = '#1b1512'; c.lineWidth = 4.5; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(-20, -28); c.quadraticCurveTo(-32, -30 + (moving ? Math.sin(ph) * 4 : 0), -39, -16 + (moving ? Math.sin(ph + 1) * 4 : 0)); c.stroke();
+    // body
+    c.fillStyle = coat;
+    c.beginPath(); c.ellipse(0, -24, 21, 9.5, 0, 0, 6.3); c.fill();
+    // neck + head
+    c.beginPath(); c.moveTo(13, -30); c.lineTo(25, -48); c.lineTo(32, -43); c.lineTo(19, -19); c.closePath(); c.fill();
+    c.save(); c.translate(31, -45); c.rotate(0.6);
+    c.beginPath(); c.ellipse(0, 0, 10.5, 4.7, 0, 0, 6.3); c.fill();
+    c.fillStyle = 'rgba(0,0,0,0.5)'; c.beginPath(); c.arc(7, 0.5, 1, 0, 6.3); c.fill();
+    c.restore();
+    c.fillStyle = coat; c.beginPath(); c.moveTo(24, -50); c.lineTo(26, -57); c.lineTo(29, -49); c.closePath(); c.fill();
+    c.strokeStyle = '#1b1512'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(12, -31); c.quadraticCurveTo(21, -45, 25, -50); c.stroke();
+    leg(-12, 0, coat); leg(12, Math.PI, coat);
+    // number cloth
+    c.fillStyle = '#fff'; c.fillRect(-9, -31, 12, 10);
+    c.fillStyle = '#222'; c.font = 'bold 9px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(String(num), -3, -25.5);
+    // jockey
+    c.save(); c.translate(2, -37); c.rotate(0.75);
+    c.fillStyle = silk; c.beginPath(); c.ellipse(0, 0, 6.5, 5, 0, 0, 6.3); c.fill();
+    if (striped) { c.fillStyle = '#fff'; c.fillRect(-1.5, -5, 3, 10); }
+    c.restore();
+    c.strokeStyle = '#f2c9a0'; c.lineWidth = 2.4; c.beginPath(); c.moveTo(5, -40); c.lineTo(17, -39); c.stroke();
+    c.fillStyle = '#f2c9a0'; c.beginPath(); c.arc(10, -45, 3.5, 0, 6.3); c.fill();
+    c.fillStyle = silk; c.beginPath(); c.arc(10, -45.8, 3.7, Math.PI, 0); c.fill();
+    c.restore();
+  }
+
+  function raceDraw(r, cur, cam, lead, moving, fastFx) {
+    var c = raceCtx;
+    if (!c) return;
+    var n = r.horses.length;
+    var rk = r._rk || (r._rk = raceRanks(r));
+    // sky + stand
+    var g = c.createLinearGradient(0, 0, 0, 160);
+    g.addColorStop(0, '#6fbdf0'); g.addColorStop(1, '#e3f4ff');
+    c.fillStyle = g; c.fillRect(0, 0, RC_W, 160);
+    c.fillStyle = '#7d8da3'; c.fillRect(0, 58, RC_W, 84);
+    c.fillStyle = '#55637a'; c.fillRect(0, 52, RC_W, 8);
+    var px = cam * 0.3;
+    var crowd = ['#e57373', '#64b5f6', '#fff176', '#81c784', '#ffffff', '#ba68c8', '#ffb74d'];
+    var i0 = Math.floor(px / 7);
+    for (var cx = -(px - i0 * 7), ci = i0; cx < RC_W; cx += 7, ci++) {
+      for (var row = 0; row < 7; row++) {
+        var hv = raceHash(ci * 13 + row * 7.3);
+        c.fillStyle = crowd[Math.floor(hv * 7)];
+        c.fillRect(cx, 68 + row * 10 + ((hv * 3) | 0), 4, 5);
+      }
+    }
+    // hedge + rail
+    c.fillStyle = '#2d7a38'; c.fillRect(0, 140, RC_W, 20);
+    c.fillStyle = '#fff'; c.fillRect(0, 154, RC_W, 3);
+    var rp = cam * 0.9;
+    for (var pxs = -(rp % 90); pxs < RC_W; pxs += 90) c.fillRect(pxs, 146, 3, 14);
+    // turf
+    var sw = 150, base = Math.floor(cam / sw);
+    for (var k = base; k * sw - cam < RC_W; k++) {
+      c.fillStyle = (k & 1) ? '#3a9341' : '#44a24b';
+      c.fillRect(k * sw - cam, 158, sw + 1, RC_H - 158);
+    }
+    var laneStep = Math.min(40, (RC_H - 205 - 14) / Math.max(1, n));
+    var baseY = 215;
+    c.strokeStyle = 'rgba(255,255,255,0.10)'; c.lineWidth = 1;
+    for (var li = 0; li <= n; li++) {
+      var ly = baseY + (li - 0.5) * laneStep - 1;
+      c.beginPath(); c.moveTo(0, ly); c.lineTo(RC_W, ly); c.stroke();
+    }
+    // distance poles
+    var poles = [1200, 800, 400, 200];
+    poles.forEach(function (m) {
+      var sx = RC_START + (1 - m / RACE_METERS) * RC_COURSE - cam;
+      if (sx < -40 || sx > RC_W + 40) return;
+      c.fillStyle = '#d32f2f'; c.fillRect(sx - 2, 112, 4, 46);
+      c.fillStyle = '#fff'; c.fillRect(sx - 2, 124, 4, 8); c.fillRect(sx - 2, 142, 4, 8);
+      c.fillStyle = '#fff'; raceRoundRect(c, sx - 24, 98, 48, 20, 4); c.fill();
+      c.strokeStyle = '#d32f2f'; c.lineWidth = 2; c.stroke();
+      c.fillStyle = '#d32f2f'; c.font = 'bold 14px ' + RACE_FONT; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(String(m), sx, 109);
     });
+    // start line
+    var ssx = RC_START - 30 - cam;
+    if (ssx > -60) {
+      c.fillStyle = '#fff'; c.fillRect(ssx, 158, 5, RC_H - 158);
+      c.fillStyle = '#1565c0'; raceRoundRect(c, ssx - 30, 96, 66, 22, 4); c.fill();
+      c.fillStyle = '#fff'; c.font = 'bold 14px ' + RACE_FONT; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText('START', ssx + 3, 107);
+    }
+    // goal
+    var gx = RC_START + RC_COURSE - cam;
+    if (gx < RC_W + 100) {
+      for (var gy = 158; gy < RC_H; gy += 10) {
+        c.fillStyle = ((gy / 10) & 1) ? '#111' : '#fff'; c.fillRect(gx, gy, 10, 10);
+        c.fillStyle = ((gy / 10) & 1) ? '#fff' : '#111'; c.fillRect(gx + 10, gy, 10, 10);
+      }
+      c.fillStyle = '#eee'; c.fillRect(gx - 3, 40, 6, 118); c.fillRect(gx + 17, 40, 6, 118);
+      c.fillStyle = '#c4121c'; raceRoundRect(c, gx - 50, 28, 120, 38, 8); c.fill();
+      c.strokeStyle = '#ffd54f'; c.lineWidth = 3; c.stroke();
+      c.fillStyle = '#fff'; c.font = 'bold 26px ' + RACE_FONT; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText('GOAL', gx + 10, 48);
+    }
+    // horses, far lane first
+    for (var i = 0; i < n; i++) {
+      var wx = RC_START + (cur[i] / 1000) * RC_COURSE;
+      var x = wx - cam;
+      if (x < -80 || x > RC_W + 70) continue;
+      var y = baseY + i * laneStep;
+      var s = Math.max(0.5, Math.min(1.15, laneStep / 22)) * (0.9 + 0.2 * (n > 1 ? i / (n - 1) : 1));
+      var silk = RACE_COLORS[i % RACE_COLORS.length];
+      var isLead = i === lead && cur[lead] < 1000;
+      raceDrawHorse(c, x, y, s, wx / 20 + i * 0.7, i + 1, RACE_COATS[i % 5], silk, i >= 8, isLead, moving);
+      var me = r.horses[i].id === playerId;
+      c.font = 'bold ' + Math.round(11 * Math.max(0.9, s)) + 'px ' + RACE_FONT;
+      c.textAlign = 'right'; c.textBaseline = 'middle';
+      c.lineWidth = 3; c.strokeStyle = 'rgba(255,255,255,0.92)';
+      var label = (me ? '▶' : '') + r.horses[i].name;
+      c.strokeText(label, x - 38 * s, y - 8 * s);
+      c.fillStyle = silk; c.fillText(label, x - 38 * s, y - 8 * s);
+    }
+    // speed streaks
+    if (fastFx > 0) {
+      c.strokeStyle = 'rgba(255,255,255,' + (0.1 + 0.2 * fastFx) + ')'; c.lineWidth = 2;
+      for (var j = 0; j < 16; j++) {
+        var sy = 168 + raceHash(j * 3.1) * 320;
+        var len = 80 + raceHash(j * 5.7) * 160;
+        var sxx = ((raceHash(j * 9.3) * (RC_W + 400)) - cam * 1.7) % (RC_W + 400);
+        if (sxx < 0) sxx += RC_W + 400;
+        sxx -= 200;
+        c.beginPath(); c.moveTo(sxx, sy); c.lineTo(sxx + len, sy); c.stroke();
+      }
+    }
+    // HUD: mini oval
+    c.fillStyle = 'rgba(0,0,0,0.5)'; raceRoundRect(c, 10, 10, 168, 98, 10); c.fill();
+    var mx = 94, my = 60, mrx = 64, mry = 30;
+    c.strokeStyle = '#d9b77e'; c.lineWidth = 10;
+    c.beginPath(); c.ellipse(mx, my, mrx, mry, 0, 0, 6.3); c.stroke();
+    c.strokeStyle = '#3d9645'; c.lineWidth = 3;
+    c.beginPath(); c.ellipse(mx, my, mrx, mry, 0, 0, 6.3); c.stroke();
+    c.fillStyle = '#fff'; c.fillRect(mx - 1.5, my + mry - 6, 3, 12);
+    var order = cur.map(function (v, i) { return [v, i]; }).sort(function (a, b2) { return (b2[0] - a[0]) || (rk[a[1]] - rk[b2[1]]); });
+    for (var d = n - 1; d >= 0; d--) {
+      var di = order[d][1];
+      var ang = Math.PI / 2 - (cur[di] / 1000) * 2 * Math.PI;
+      var dx = mx + mrx * Math.cos(ang), dy = my + mry * Math.sin(ang);
+      c.fillStyle = RACE_COLORS[di % RACE_COLORS.length];
+      c.strokeStyle = '#fff'; c.lineWidth = d === 0 ? 2 : 1;
+      c.beginPath(); c.arc(dx, dy, d === 0 ? 5.5 : 3.6, 0, 6.3); c.fill(); c.stroke();
+    }
+    // HUD: remaining
     var rem = Math.max(0, Math.ceil((1000 - cur[lead]) * RACE_METERS / 1000 / 10) * 10);
-    var t = document.getElementById('race-remain');
-    if (t) t.innerHTML = rem > 0 ? '🏁 ゴールまで 残り <b>' + rem + '</b> m' : '🏁 ゴール！';
-    return rem;
+    c.fillStyle = 'rgba(0,0,0,0.55)'; raceRoundRect(c, RC_W / 2 - 105, 10, 210, 42, 21); c.fill();
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = rem <= 200 ? '#ffd54f' : '#fff';
+    c.font = 'bold 24px ' + RACE_FONT;
+    c.fillText(rem > 0 ? '残り ' + rem + ' m' : 'ゴール！', RC_W / 2, 32);
+    // HUD: top 5
+    var rows = Math.min(5, n);
+    c.fillStyle = 'rgba(0,0,0,0.5)'; raceRoundRect(c, RC_W - 200, 10, 190, 14 + rows * 22, 10); c.fill();
+    for (var q = 0; q < rows; q++) {
+      var qi = order[q][1];
+      var qy = 28 + q * 22;
+      c.fillStyle = RACE_COLORS[qi % RACE_COLORS.length];
+      c.beginPath(); c.arc(RC_W - 180, qy, 9, 0, 6.3); c.fill();
+      c.fillStyle = '#fff'; c.font = 'bold 11px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(String(qi + 1), RC_W - 180, qy + 0.5);
+      c.textAlign = 'left'; c.font = 'bold 13px ' + RACE_FONT;
+      c.fillStyle = q === 0 ? '#ffd54f' : '#fff';
+      c.fillText((q + 1) + '位  ' + r.horses[qi].name, RC_W - 164, qy + 0.5);
+    }
   }
 
   function raceRanks(r) {
@@ -1778,16 +1974,10 @@
 
   function raceStatic(r) {
     var ranks = raceRanks(r);
-    raceLanes.innerHTML = raceLanesHTML(r, ranks);
-    var wld = raceSetWorld();
-    raceCam(wld, 1, 0, true);
-    var last = r.pos[r.pos.length - 1];
-    var sdots = raceMapBuild(r);
-    raceMapUpdate(sdots, last, r.order[0]);
-    Array.prototype.forEach.call(raceLanes.querySelectorAll('.race-horse'), function (el, i) {
-      el.style.setProperty('--p', String(last[i] / 1000));
-      if (ranks[i] === 1) el.classList.add('leader');
-    });
+    raceLanes.innerHTML = raceLanesHTML();
+    raceCanvasInit();
+    var fin = ranks.map(function (rk) { return 1000 - (rk - 1) * 4; });
+    raceDraw(r, fin, raceCamX(1, 1, 0, true), r.order[0], false, 0);
     var w = r.horses[r.order[0]];
     raceCall.className = 'race-call';
     raceCall.textContent = '🏆 優勝は ' + w.name + ' さん！';
@@ -1805,15 +1995,12 @@
     raceResult.innerHTML = '';
     raceStanding.textContent = '';
     raceAgainBtn.hidden = true;
-    raceLanes.innerHTML = raceLanesHTML(r, null);
-    var horses = Array.prototype.slice.call(raceLanes.querySelectorAll('.race-horse'));
-    var n = horses.length;
+    raceLanes.innerHTML = raceLanesHTML();
+    raceCanvasInit();
+    var n = r.horses.length;
     var S = r.pos.length;
-    var world = raceSetWorld();
     var cam = 0;
-
-    var dots = raceMapBuild(r);
-    raceMapUpdate(dots, r.pos[0], 0);
+    raceDraw(r, r.pos[0], 0, 0, false, 0);
     // fanfare -> 位置について -> よーい -> pistol
     raceCall.className = 'race-call count small';
     raceCall.textContent = '🎺 まもなく発走！';
@@ -1827,7 +2014,6 @@
       playPistol(); flashScreen(); raceRing();
       raceFxEl().classList.remove('dark');
       raceBig('GO!!', 'gold', 1000);
-      raceLanes.style.setProperty('--spd', '0.35');
       raceCrowd = startCrowd();
       raceBoardEl.classList.add('race-shake');
       raceLater(function () { raceBoardEl.classList.remove('race-shake'); }, 600);
@@ -1836,7 +2022,6 @@
       raceLater(function () { raceCall.className = 'race-call'; }, 900);
       var nextMs = 0;
       var MILES = [1000, 500, 300, 200, 100];
-      horses.forEach(function (el) { el.classList.add('running'); });
       var s = 0;
       var last = performance.now();
       var leader = -1;
@@ -1861,14 +2046,10 @@
         lead = 0;
         for (var j = 1; j < n; j++) if (cur[j] > cur[lead]) lead = j;
 
-        cam = raceCam(world, cur[lead] / 1000, cam, false);
-        for (var k = 0; k < n; k++) {
-          horses[k].style.setProperty('--p', String(cur[k] / 1000));
-          horses[k].classList.toggle('leader', k === lead && cur[lead] < 1000);
-        }
+        cam = raceCamX(cur[lead] / 1000, Math.min.apply(null, cur) / 1000, cam, false);
 
         if (document.getElementById('race-game').hidden) { raceStop(); return; }
-        var remNow = raceMapUpdate(dots, cur, lead);
+        var remNow = Math.max(0, Math.ceil((1000 - cur[lead]) * RACE_METERS / 1000 / 10) * 10);
         var prog = cur[lead] / 1000;
         if (!winnerDone && nextMs < MILES.length && remNow <= MILES[nextMs] && remNow > 0) {
           var ms = MILES[nextMs];
@@ -1885,7 +2066,6 @@
         // mood: speed lines build, red vignette + shake in the home stretch, dark zoom in the photo finish
         var fxEl = raceFxEl();
         var slow = rate < 1 ? (1 - rate) / 0.7 : 0;
-        raceLanes.style.setProperty('--spd', String(winnerDone ? 0 : 0.3 + 0.5 * prog));
         var vigEl = fxEl.querySelector('.vig');
         vigEl.classList.toggle('dim', slow > 0.05);
         fxEl.style.setProperty('--vig', winnerDone ? '0' : slow > 0.05 ? String(0.4 + 0.6 * slow) : remNow <= 400 ? '0.8' : '0');
@@ -1920,6 +2100,7 @@
           raceLater(function () { raceBig('優勝！！', 'gold', 1900); }, 2900);
         }
 
+        raceDraw(r, cur, cam, lead, true, winnerDone ? 0 : 0.3 + 0.7 * prog);
         var ranksNow = raceRanks(r);
         var order = cur.map(function (v, i) { return [v, i]; }).sort(function (a, b) { return (b[0] - a[0]) || (ranksNow[a[1]] - ranksNow[b[1]]); });
         raceStanding.textContent = order.slice(0, 3).map(function (o, k2) { return (k2 + 1) + '位 ' + r.horses[o[1]].name; }).join('　');
