@@ -1596,7 +1596,13 @@
         var cur = raceInterp(r, s);
         var lead = 0;
         for (var i = 1; i < n; i++) if (cur[i] > cur[lead]) lead = i;
-        s = Math.min(S - 1, s + dt / r.stepMs);
+        // photo-finish slow-motion: ease down to 0.3x over the last 10%, normal speed again once the leader crosses
+        var rate = 1;
+        if (cur[lead] >= 900 && cur[lead] < 1000) {
+          var q = Math.min(1, (cur[lead] - 900) / 40);
+          rate = 1 - 0.7 * q * q * (3 - 2 * q);
+        }
+        s = Math.min(S - 1, s + (dt / r.stepMs) * rate);
         cur = raceInterp(r, s);
         lead = 0;
         for (var j = 1; j < n; j++) if (cur[j] > cur[lead]) lead = j;
