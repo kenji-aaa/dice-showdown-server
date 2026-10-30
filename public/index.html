@@ -1916,8 +1916,8 @@
           raceLanes.style.transform = '';
           raceFxEl().classList.add('dark');
           raceBig('ゴール！！', 'gold', 1300);
-          raceLater(function () { raceBig('🏆 ' + win.name, 'gold', 2800); }, 1300);
-          raceLater(function () { raceBig('優勝！！', 'gold', 1800); }, 2300);
+          raceLater(function () { raceBig('🏆 ' + win.name, 'gold', 1500); }, 1300);
+          raceLater(function () { raceBig('優勝！！', 'gold', 1900); }, 2900);
         }
 
         var ranksNow = raceRanks(r);
@@ -1926,7 +1926,7 @@
 
         if (s >= S - 1) {
           raceRaf = null;
-          raceLater(function () { raceAnim = false; raceFreshReveal = true; raceFxOff(); renderRace(); }, 4600);
+          raceLater(function () { raceAnim = false; raceFreshReveal = true; raceFxOff(); renderRace(); }, 5000);
           return;
         }
         raceRaf = requestAnimationFrame(frame);
