@@ -1683,7 +1683,11 @@
     }
     return raceFx;
   }
+  var raceBigCount = 0;
   function raceBig(text, cls, ms) {
+    raceBigCount++;
+    raceCall.style.visibility = 'hidden';
+    setTimeout(function () { if (--raceBigCount <= 0) raceCall.style.visibility = ''; }, (ms || 1100) + 100);
     var d = document.createElement('div');
     d.className = 'big' + (cls ? ' ' + cls : '');
     d.textContent = text;
@@ -2110,12 +2114,7 @@
         var cur = raceInterp(r, s);
         var lead = 0;
         for (var i = 1; i < n; i++) if (cur[i] > cur[lead]) lead = i;
-        // photo-finish slow-motion: ease down to 0.3x over the last 10%, normal speed again once the leader crosses
         var rate = 1;
-        if (cur[lead] >= 900 && cur[lead] < 1000) {
-          var q = Math.min(1, (cur[lead] - 900) / 40);
-          rate = 1 - 0.7 * q * q * (3 - 2 * q);
-        }
         s = Math.min(END, s + (dt / r.stepMs) * rate);
         cur = raceInterp(r, s);
         lead = 0;
@@ -2185,7 +2184,8 @@
             })(kk, tRev + (top - 1 - kk) * 700);
           }
           var tWin = tRev + (top - 1) * 700 + 1500;
-          raceLater(function () { playRiser(1.2); }, tWin - 1300);
+          raceLater(function () { raceBig('来週の朝礼は…', 'mid', 2700); playRiser(2.4); }, tWin);
+          for (var jc = 0; jc < 8; jc++) raceLater(function () { playKick(0.5); }, tWin + jc * 330);
           raceLater(function () {
             r._judge = false;
             if (lastDraw) raceDraw.apply(null, lastDraw);
@@ -2194,10 +2194,10 @@
             document.getElementById('led-ok').classList.add('on');
             raceCall.textContent = '🏆 優勝は ' + win.name + ' さん！';
             playCrash(); playFanfare(); flashScreen(); raceRing(); launchConfetti(5200);
-            raceBig('🏆 ' + win.name, 'gold', 1600);
-            raceLater(function () { raceBig('優勝！！', 'gold', 1800); launchConfetti(3000); }, 1500);
-          }, tWin);
-          raceLater(function () { raceAnim = false; raceFreshReveal = true; raceFxOff(); renderRace(); }, tWin + 4300);
+            raceBig(win.name, 'gold', 2600);
+            raceLater(function () { launchConfetti(3000); }, 1500);
+          }, tWin + 2800);
+          raceLater(function () { raceAnim = false; raceFreshReveal = true; raceFxOff(); renderRace(); }, tWin + 2800 + 3600);
         }
 
         lastDraw = [r, cur, cam, lead, true, 0, raceOverrun(s)];
