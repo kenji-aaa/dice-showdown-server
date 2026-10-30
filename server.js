@@ -66,6 +66,7 @@ function simulateRaceOnce(n) {
     c1: 0.15 + Math.random() * 0.7, w1: 0.08 + Math.random() * 0.12, a1: 0.25 + Math.random() * 0.55,
     c2: Math.random(), w2: 0.06 + Math.random() * 0.1, a2: -(0.2 + Math.random() * 0.3),
     noise: 0,
+    sp: 0.45 + Math.random() * 0.5,
   }));
   const pos = new Array(n).fill(0);
   const finishT = new Array(n).fill(null);
@@ -82,7 +83,10 @@ function simulateRaceOnce(n) {
       const stretch = p > 0.8 ? 2.2 : 1;
       const catchup = ((lead - pos[i]) / 100) * 1.6;
       const drag = ((pos[i] - avg) / 100) * 1.1;
-      const speed = Math.max(0.35, pr.base * (1 + surge) + pr.noise * stretch + catchup - drag);
+      // final spurt: everyone accelerates over the last quarter, some more than others
+      const k = Math.min(1, Math.max(0, (p - 0.72) / 0.28));
+      const spurt = 1 + pr.sp * k * k * (3 - 2 * k);
+      const speed = Math.max(0.35, pr.base * (1 + surge) + pr.noise * stretch + catchup - drag) * spurt;
       const np = pos[i] + speed * 0.5;
       if (np >= 100) {
         finishT[i] = step - 1 + (100 - pos[i]) / (np - pos[i]);

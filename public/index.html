@@ -275,9 +275,10 @@
   .race-lane { display: flex; align-items: center; gap: 8px; }
   .race-name { width: 96px; flex-shrink: 0; text-align: right; font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 6px; }
   .race-lane.me .race-name { text-decoration: underline; }
-  .race-track { position: relative; flex: 1; height: 34px; border-bottom: 2px dashed var(--border); }
+  .race-track { position: relative; flex: 1; height: 34px; border-bottom: 2px dashed var(--border); overflow: hidden; }
+  .race-world { position: absolute; top: 0; left: 0; height: 100%; width: calc(var(--w, 1000) * 1px); transform: translateX(calc(var(--cam, 0) * -1px)); will-change: transform; background: repeating-linear-gradient(90deg, transparent 0 148px, rgba(0,0,0,0.10) 148px 150px); }
   .race-goal { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; background: repeating-linear-gradient(0deg, #222 0 6px, #fff 6px 12px); opacity: 0.85; }
-  .race-horse { position: absolute; top: 0; left: calc((100% - 34px) * var(--p, 0)); width: 34px; height: 34px; font-size: 28px; line-height: 34px; text-align: center; }
+  .race-horse { position: absolute; top: 0; left: calc((var(--w, 1000) * 1px - 34px) * var(--p, 0)); width: 34px; height: 34px; font-size: 28px; line-height: 34px; text-align: center; }
   .race-horse span { display: inline-block; transform: scaleX(-1); filter: drop-shadow(0 2px 2px rgba(0,0,0,0.25)); }
   .race-horse.leader span { animation: horse-bob 0.22s ease-in-out infinite alternate; filter: drop-shadow(0 0 8px rgba(255,190,40,0.95)); }
   .race-horse.running span { animation: horse-bob 0.3s ease-in-out infinite alternate; }
@@ -1498,8 +1499,25 @@
       var me = hs.id === playerId;
       var medal = ranks ? (ranks[i] === 1 ? '🥇 ' : ranks[i] === 2 ? '🥈 ' : ranks[i] === 3 ? '🥉 ' : ranks[i] + '位 ') : '';
       return '<div class="race-lane' + (me ? ' me' : '') + '"><div class="race-name" style="color:' + RACE_COLORS[i % RACE_COLORS.length] + '">' + medal + escapeHtml(hs.name) + '</div>' +
-        '<div class="race-track"><div class="race-horse" data-i="' + i + '"><span>🐎</span></div><div class="race-goal"></div></div></div>';
+        '<div class="race-track"><div class="race-world"><div class="race-horse" data-i="' + i + '"><span>🐎</span></div><div class="race-goal"></div></div></div></div>';
     }).join('');
+  }
+
+  // Course length = several screen widths, so the goal starts far off to the right.
+  function raceSetWorld(factor) {
+    var track = raceLanes.querySelector('.race-track');
+    var viewW = track ? track.clientWidth : 600;
+    var W = Math.max(2800, Math.round(viewW * 5));
+    raceLanes.style.setProperty('--w', String(W));
+    raceLanes.style.setProperty('--cam', '0');
+    return { viewW: viewW, W: W };
+  }
+  function raceCam(world, leaderFrac, cam, snap) {
+    var leaderX = leaderFrac * (world.W - 34);
+    var target = Math.max(0, Math.min(world.W - world.viewW, leaderX - world.viewW * 0.62));
+    var next = snap ? target : cam + (target - cam) * 0.14;
+    raceLanes.style.setProperty('--cam', String(next));
+    return next;
   }
 
   function raceRanks(r) {
@@ -1529,6 +1547,8 @@
   function raceStatic(r) {
     var ranks = raceRanks(r);
     raceLanes.innerHTML = raceLanesHTML(r, ranks);
+    var wld = raceSetWorld();
+    raceCam(wld, 1, 0, true);
     var last = r.pos[r.pos.length - 1];
     Array.prototype.forEach.call(raceLanes.querySelectorAll('.race-horse'), function (el, i) {
       el.style.setProperty('--p', String(last[i] / 1000));
@@ -1550,6 +1570,8 @@
     var horses = Array.prototype.slice.call(raceLanes.querySelectorAll('.race-horse'));
     var n = horses.length;
     var S = r.pos.length;
+    var world = raceSetWorld();
+    var cam = 0;
 
     // 3, 2, 1, GO!
     ['3', '2', '1'].forEach(function (t, k) {
@@ -1574,13 +1596,12 @@
         var cur = raceInterp(r, s);
         var lead = 0;
         for (var i = 1; i < n; i++) if (cur[i] > cur[lead]) lead = i;
-        // slow-motion over the last 20% until the leader crosses the line
-        var rate = cur[lead] >= 800 && cur[lead] < 1000 ? 0.5 : 1;
-        s = Math.min(S - 1, s + (dt / r.stepMs) * rate);
+        s = Math.min(S - 1, s + dt / r.stepMs);
         cur = raceInterp(r, s);
         lead = 0;
         for (var j = 1; j < n; j++) if (cur[j] > cur[lead]) lead = j;
 
+        cam = raceCam(world, cur[lead] / 1000, cam, false);
         for (var k = 0; k < n; k++) {
           horses[k].style.setProperty('--p', String(cur[k] / 1000));
           horses[k].classList.toggle('leader', k === lead && cur[lead] < 1000);
