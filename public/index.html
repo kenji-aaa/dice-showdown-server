@@ -1015,10 +1015,67 @@
     src.connect(hp).connect(g).connect(ctx.destination);
     src.start(t0);
   }
+  // Recorded sounds in public/sounds/. Anything that fails to load falls back to the synthesized version.
+  var RACE_SOUND_FILES = {
+    fanfare: 'sounds/fanfare.mp3',
+    gun: 'sounds/gun.mp3',
+    gate: 'sounds/gate.mp3',
+    gallop: 'sounds/gallop.mp3',
+    neigh: 'sounds/neigh.mp3',
+    crowd: 'sounds/crowd.mp3'
+  };
+  var raceSnd = {};
+  var raceSndRequested = false;
+  function raceSndLoad() {
+    if (raceSndRequested) return;
+    var ctx = getAmidaAudioCtx();
+    if (!ctx || !window.fetch) return;
+    raceSndRequested = true;
+    Object.keys(RACE_SOUND_FILES).forEach(function (k) {
+      fetch(RACE_SOUND_FILES[k]).then(function (res) {
+        if (!res.ok) throw new Error('missing');
+        return res.arrayBuffer();
+      }).then(function (ab) {
+        return new Promise(function (ok, ng) { ctx.decodeAudioData(ab, ok, ng); });
+      }).then(function (buf) { raceSnd[k] = buf; }).catch(function () {});
+    });
+  }
+  // returns { dur, gain, src, stop(fadeSec) } or null when the file is not available
+  function raceSndPlay(k, vol, loop) {
+    var buf = raceSnd[k];
+    var ctx = getAmidaAudioCtx();
+    if (!buf || !ctx) return null;
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = !!loop;
+    var g = ctx.createGain();
+    g.gain.value = vol;
+    src.connect(g).connect(ctx.destination);
+    src.start();
+    return {
+      dur: buf.duration, gain: g, src: src,
+      stop: function (fade) {
+        var f = fade || 0.2;
+        g.gain.setTargetAtTime(0.0001, ctx.currentTime, f / 3);
+        setTimeout(function () { try { src.stop(); } catch (e) {} }, f * 1000 + 300);
+      }
+    };
+  }
+
   // Crowd noise that swells while the race runs; returns { level(x), stop(burst) }.
   function startCrowd() {
     var ctx = getAmidaAudioCtx();
     if (!ctx) return null;
+    var rec = raceSndPlay('crowd', 0.05, true);
+    if (rec) {
+      return {
+        level: function (x) { rec.gain.gain.setTargetAtTime(0.12 + 0.75 * x, ctx.currentTime, 0.3); },
+        stop: function (burst) {
+          if (burst) { rec.gain.gain.setTargetAtTime(1.3, ctx.currentTime, 0.1); setTimeout(function () { rec.stop(2.5); }, 900); }
+          else rec.stop(0.6);
+        }
+      };
+    }
     var len = ctx.sampleRate * 2;
     var buf = ctx.createBuffer(1, len, ctx.sampleRate);
     var d = buf.getChannelData(0);
@@ -1674,6 +1731,8 @@
 
   var raceFx = null;
   var raceCrowd = null;
+  var raceGallop = null;
+  var raceFan = null;
   function raceFxEl() {
     if (!raceFx) {
       raceFx = document.createElement('div');
@@ -1705,6 +1764,8 @@
     var el = raceFx;
     raceFx = null;
     if (raceCrowd) { raceCrowd.stop(false); raceCrowd = null; }
+    if (raceGallop) { raceGallop.stop(0.6); raceGallop = null; }
+    if (raceFan) { raceFan.stop(0.3); raceFan = null; }
     var board = document.getElementById('race-board');
     if (board) board.classList.remove('race-shake');
     raceLanes.style.transform = '';
@@ -2084,15 +2145,28 @@
     raceCall.textContent = '🎺 まもなく発走！';
     raceFxEl().classList.add('dark');
     raceBig('まもなく発走！', 'mid gold', 2600);
-    playBrassFanfare();
-    raceLater(function () { raceCall.textContent = '位置について…'; raceBig('位置について…', 'mid', 1200); playKick(0.6); }, 4600);
-    raceLater(function () { raceCall.textContent = 'よーい…'; raceBig('よーい…', 'mid', 1700); playKick(0.7); }, 5800);
+    raceSndLoad();
+    raceCrowd = startCrowd();
+    if (raceCrowd) raceCrowd.level(0.08);
+    raceFan = raceSndPlay('fanfare', 0.9, false);
+    if (!raceFan) playBrassFanfare();
+    var tPos = raceFan ? Math.round(raceFan.dur * 1000) + 300 : 4600;
+    var tReady = tPos + 1200;
+    var tGo = tReady + 1200;
+    raceLater(function () {
+      raceCall.textContent = '位置について…'; raceBig('位置について…', 'mid', 1200);
+      if (!raceSndPlay('neigh', 0.9, false)) playKick(0.6);
+    }, tPos);
+    raceLater(function () { raceCall.textContent = 'よーい…'; raceBig('よーい…', 'mid', 1700); playKick(0.7); }, tReady);
 
     raceLater(function () {
-      playPistol(); flashScreen(); raceRing();
+      if (raceSnd.gun) raceSndPlay('gun', 1, false); else playPistol();
+      raceSndPlay('gate', 0.8, false);
+      flashScreen(); raceRing();
+      raceGallop = raceSndPlay('gallop', 0.3, true);
       raceFxEl().classList.remove('dark');
       raceBig('GO!!', 'gold', 1000);
-      raceCrowd = startCrowd();
+      if (!raceCrowd) raceCrowd = startCrowd();
       raceBoardEl.classList.add('race-shake');
       raceLater(function () { raceBoardEl.classList.remove('race-shake'); }, 600);
       raceCall.className = 'race-call count small';
@@ -2147,8 +2221,14 @@
         raceLanes.style.transformOrigin = '85% 50%';
         raceLanes.style.transform = slow > 0 ? 'scale(' + (1 + 0.05 * slow) + ')' : '';
         if (raceCrowd) raceCrowd.level(prog);
-        var hoofGap = 270 - 130 * prog;
-        if (now - lastHoof > hoofGap) { lastHoof = now; playKick(0.1 + 0.18 * prog); }
+        if (raceGallop) {
+          var gctx = getAmidaAudioCtx();
+          raceGallop.gain.gain.setTargetAtTime(winnerDone ? 0.0001 : 0.3 + 0.6 * prog, gctx.currentTime, 0.25);
+          raceGallop.src.playbackRate.value = 0.9 + 0.35 * prog;
+        } else {
+          var hoofGap = 270 - 130 * prog;
+          if (now - lastHoof > hoofGap) { lastHoof = now; playKick(0.1 + 0.18 * prog); }
+        }
 
         if (lead !== leader && cur[lead] > 40 && !winnerDone) {
           if (leader !== -1 && now - lastCallAt > 900) {
@@ -2167,6 +2247,7 @@
           raceCall.textContent = 'ゴール！！';
           raceStanding.textContent = '';
           if (raceCrowd) { raceCrowd.stop(true); raceCrowd = null; }
+          if (raceGallop) { raceGallop.stop(1.5); raceGallop = null; }
           raceBoardEl.classList.remove('race-shake');
           raceLanes.style.transform = '';
           // lag, then the 電光掲示板 announces the finishing order from the bottom up
@@ -2213,10 +2294,11 @@
         raceRaf = requestAnimationFrame(frame);
       }
       raceRaf = requestAnimationFrame(frame);
-    }, 7000);
+    }, tGo);
   }
 
   function renderRace() {
+    raceSndLoad();
     var r = latestData.race;
     raceSetupDiv.hidden = !!r;
     raceBoard.hidden = !r;
