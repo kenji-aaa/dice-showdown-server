@@ -29,7 +29,7 @@ function randomFace() {
 function createRoom() {
   let code;
   do { code = randomCode(); } while (rooms.has(code));
-  const room = { code, game: 'dice', round: 1, players: [], rolls: {}, activeIds: null, hostId: null, spectators: [], cards: null, amida: null, roulette: null, rouletteWon: [], rouletteExclude: true, updatedAt: Date.now() };
+  const room = { code, game: 'dice', round: 1, players: [], rolls: {}, activeIds: null, hostId: null, spectators: [], cards: null, race: null, amida: null, roulette: null, rouletteWon: [], rouletteExclude: true, updatedAt: Date.now() };
   rooms.set(code, room);
   return room;
 }
@@ -57,6 +57,84 @@ function publicCards(c) {
   return c;
 }
 
+// Pre-computes a whole race. Horses have their own surge/fade phases plus a
+// pull toward the leader and a drag on the leader, so the lead keeps changing
+// and the last stretch is noisy. Positions are stored as integers 0..1000.
+function simulateRaceOnce(n) {
+  const prof = Array.from({ length: n }, () => ({
+    base: 0.96 + Math.random() * 0.08,
+    c1: 0.15 + Math.random() * 0.7, w1: 0.08 + Math.random() * 0.12, a1: 0.25 + Math.random() * 0.55,
+    c2: Math.random(), w2: 0.06 + Math.random() * 0.1, a2: -(0.2 + Math.random() * 0.3),
+    noise: 0,
+  }));
+  const pos = new Array(n).fill(0);
+  const finishT = new Array(n).fill(null);
+  const frames = [pos.map(() => 0)];
+  for (let step = 1; step <= 900; step++) {
+    const lead = Math.max(...pos);
+    const avg = pos.reduce((a, b) => a + b, 0) / n;
+    for (let i = 0; i < n; i++) {
+      if (finishT[i] !== null) continue;
+      const pr = prof[i];
+      const p = pos[i] / 100;
+      const surge = pr.a1 * Math.exp(-(((p - pr.c1) / pr.w1) ** 2)) + pr.a2 * Math.exp(-(((p - pr.c2) / pr.w2) ** 2));
+      pr.noise = pr.noise * 0.8 + (Math.random() - 0.5) * 0.35;
+      const stretch = p > 0.8 ? 2.2 : 1;
+      const catchup = ((lead - pos[i]) / 100) * 1.6;
+      const drag = ((pos[i] - avg) / 100) * 1.1;
+      const speed = Math.max(0.35, pr.base * (1 + surge) + pr.noise * stretch + catchup - drag);
+      const np = pos[i] + speed * 0.5;
+      if (np >= 100) {
+        finishT[i] = step - 1 + (100 - pos[i]) / (np - pos[i]);
+        pos[i] = 100;
+      } else {
+        pos[i] = np;
+      }
+    }
+    frames.push(pos.map((v) => Math.round(v * 10)));
+    if (finishT.every((t) => t !== null)) break;
+  }
+  for (let i = 0; i < n; i++) if (finishT[i] === null) finishT[i] = 1e6 + (100 - pos[i]);
+  const order = finishT.map((t, i) => [t, i]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+  return { frames, order };
+}
+
+// A race is only kept if it is a real dogfight: enough lead changes before the
+// finish and a close result. These conditions don't depend on which horse is
+// which, so every horse still wins equally often.
+function countLeadChanges(frames, n) {
+  let leader = -1;
+  let ch = 0;
+  for (const f of frames) {
+    let l = 0;
+    for (let i = 1; i < n; i++) if (f[i] > f[l]) l = i;
+    if (f[l] >= 1000) break;
+    if (f[l] > 100) {
+      if (leader !== -1 && l !== leader) ch++;
+      leader = l;
+    }
+  }
+  return ch;
+}
+
+function simulateRace(n) {
+  const needChanges = n <= 3 ? 3 : n <= 6 ? 5 : 6;
+  let best = null;
+  let bestScore = -1;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const sim = simulateRaceOnce(n);
+    const ch = countLeadChanges(sim.frames, n);
+    const w = sim.order[0];
+    const k = sim.frames.findIndex((f) => f[w] >= 1000);
+    const f = sim.frames[k];
+    const margin = (1000 - Math.max(...f.filter((_, i) => i !== w))) / 10;
+    if (ch >= needChanges && margin <= 4) return sim;
+    const score = Math.min(ch, needChanges) * 10 - Math.min(margin, 20);
+    if (score > bestScore) { bestScore = score; best = sim; }
+  }
+  return best;
+}
+
 function publicState(room) {
   hostOf(room);
   return {
@@ -70,6 +148,7 @@ function publicState(room) {
     spectators: room.spectators,
     amida: publicAmida(room.amida),
     cards: publicCards(room.cards),
+    race: room.race,
     roulette: room.roulette,
     rouletteWon: room.rouletteWon,
     rouletteExclude: room.rouletteExclude,
@@ -188,7 +267,7 @@ io.on('connection', (socket) => {
     leaveCurrentRoom(null);
     const room = createRoom();
     if (reqId) createdByReq.set(String(reqId), room.code);
-    if (game === 'dice' || game === 'amida' || game === 'roulette' || game === 'cards') room.game = game;
+    if (game === 'dice' || game === 'amida' || game === 'roulette' || game === 'cards' || game === 'race') room.game = game;
     room.players.push({ id: pid, name });
     room.hostId = pid;
     room.updatedAt = Date.now();
@@ -407,7 +486,7 @@ io.on('connection', (socket) => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
     if (!room || hostOf(room) !== playerId) return;
-    if (game !== 'dice' && game !== 'amida' && game !== 'roulette' && game !== 'cards') return;
+    if (game !== 'dice' && game !== 'amida' && game !== 'roulette' && game !== 'cards' && game !== 'race') return;
     room.game = game;
     room.updatedAt = Date.now();
     broadcast(joinedCode);
@@ -493,6 +572,43 @@ io.on('connection', (socket) => {
     const room = rooms.get(joinedCode);
     if (!room || hostOf(room) !== playerId) return;
     room.cards = null;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
+  socket.on('race_start', () => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room || hostOf(room) !== playerId) return;
+    if (room.race && !room.race.done) return;
+    const ps = playersIn(room).slice(0, 30);
+    if (ps.length < 2) return;
+    const sim = simulateRace(ps.length);
+    const race = {
+      id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      horses: ps.map((p) => ({ id: p.id, name: p.name })),
+      stepMs: 100,
+      pos: sim.frames,
+      order: sim.order,
+      done: false,
+    };
+    room.race = race;
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+    const code = joinedCode;
+    setTimeout(() => {
+      const r = rooms.get(code);
+      if (!r || r.race !== race) return;
+      race.done = true;
+      broadcast(code);
+    }, race.pos.length * race.stepMs * 1.4 + 9000);
+  });
+
+  socket.on('race_reset', () => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room || hostOf(room) !== playerId) return;
+    room.race = null;
     room.updatedAt = Date.now();
     broadcast(joinedCode);
   });

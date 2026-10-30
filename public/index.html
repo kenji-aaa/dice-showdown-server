@@ -269,6 +269,25 @@
   .card3d.mine .who { color: var(--accent); font-weight: 700; }
   .card3d.shake .inner { animation: card-shake 0.18s linear infinite; }
   @keyframes card-shake { 0%,100% { transform: translateX(0) rotate(0); } 25% { transform: translateX(-3px) rotate(-3deg); } 75% { transform: translateX(3px) rotate(3deg); } }
+  .race-call { text-align: center; font-family: "Zen Maru Gothic", sans-serif; font-weight: 700; font-size: 20px; min-height: 1.6em; margin: 0.2rem 0 0.6rem; color: var(--accent); }
+  .race-call.count { font-size: 56px; }
+  .race-lanes { display: flex; flex-direction: column; gap: 4px; padding: 10px 0; background: linear-gradient(180deg, color-mix(in srgb, var(--felt) 10%, transparent), transparent); border-radius: 12px; }
+  .race-lane { display: flex; align-items: center; gap: 8px; }
+  .race-name { width: 96px; flex-shrink: 0; text-align: right; font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 6px; }
+  .race-lane.me .race-name { text-decoration: underline; }
+  .race-track { position: relative; flex: 1; height: 34px; border-bottom: 2px dashed var(--border); }
+  .race-goal { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; background: repeating-linear-gradient(0deg, #222 0 6px, #fff 6px 12px); opacity: 0.85; }
+  .race-horse { position: absolute; top: 0; left: calc((100% - 34px) * var(--p, 0)); width: 34px; height: 34px; font-size: 28px; line-height: 34px; text-align: center; }
+  .race-horse span { display: inline-block; transform: scaleX(-1); filter: drop-shadow(0 2px 2px rgba(0,0,0,0.25)); }
+  .race-horse.leader span { animation: horse-bob 0.22s ease-in-out infinite alternate; filter: drop-shadow(0 0 8px rgba(255,190,40,0.95)); }
+  .race-horse.running span { animation: horse-bob 0.3s ease-in-out infinite alternate; }
+  @keyframes horse-bob { from { transform: scaleX(-1) translateY(0); } to { transform: scaleX(-1) translateY(-4px); } }
+  .race-standing { text-align: center; font-size: 13px; color: var(--ink-secondary); margin: 0.6rem 0; min-height: 1.3em; }
+  .race-result { display: flex; flex-direction: column; gap: 0.4rem; margin: 0.6rem 0; }
+  .race-result .row { display: flex; gap: 0.6rem; align-items: center; padding: 0.45rem 0.75rem; border-radius: 10px; background: var(--surface-2); border: 1px solid transparent; }
+  .race-result .row.me { border-color: var(--felt); }
+  .race-result .row.first { border-color: #ffb400; background: #fff3c4; font-weight: 700; color: #6b4a00; }
+  .race-result .rk { width: 2.2em; font-weight: 700; }
   .wrap.wide { max-width: 1040px; }
   .wrap.wide .amida-scroll { display: flex; flex-direction: column; align-items: center; }
   .wrap.wide .amida-results { max-width: 560px; margin-left: auto; margin-right: auto; width: 100%; }
@@ -286,7 +305,7 @@
   <section id="entry" class="card">
     <div class="header">
       <h1>🎮 みんなでゲーム</h1>
-      <p>ダイス・あみだくじ・ルーレット・カード</p>
+      <p>ダイス・あみだくじ・ルーレット・カード・競馬</p>
     </div>
     <div class="body">
       <div>
@@ -300,6 +319,7 @@
           <button class="game-tab" type="button" data-game="amida">🪜 あみだくじ</button>
           <button class="game-tab" type="button" data-game="roulette">🎡 ルーレット</button>
           <button class="game-tab" type="button" data-game="cards">🃏 カード</button>
+          <button class="game-tab" type="button" data-game="race">🏇 競馬</button>
         </div>
       </div>
       <button class="primary" id="create-btn">部屋を作る</button>
@@ -331,6 +351,7 @@
         <button class="game-tab" id="tab-amida" data-game="amida" type="button">🪜 あみだくじ</button>
         <button class="game-tab" id="tab-roulette" data-game="roulette" type="button">🎡 ルーレット</button>
         <button class="game-tab" id="tab-cards" data-game="cards" type="button">🃏 カード</button>
+        <button class="game-tab" id="tab-race" data-game="race" type="button">🏇 競馬</button>
       </div>
 
       <div id="dice-game">
@@ -411,6 +432,24 @@
         </div>
       </div>
 
+      <div id="race-game" hidden>
+        <div id="race-setup">
+          <div class="amida-hint big" id="race-count-note" style="margin-bottom:0.4rem;"></div>
+          <div class="footnote" style="margin: 0 0 0.8rem;">参加者が1頭ずつの馬になって競走します。誰が勝つかはスタートするまで誰にも分かりません。</div>
+          <button class="primary" id="race-start-btn">🏇 レースを始める</button>
+          <div class="err" id="race-err"></div>
+        </div>
+        <div id="race-board" hidden>
+          <div class="race-call" id="race-call"></div>
+          <div class="race-lanes" id="race-lanes"></div>
+          <div class="race-standing" id="race-standing"></div>
+          <div class="race-result" id="race-result"></div>
+          <div class="actions">
+            <button class="ghost" id="race-again-btn" hidden>もう一度レース</button>
+          </div>
+        </div>
+      </div>
+
       <div class="footnote">このブラウザがあなたの席です。他の人は同じ合言葉で参加してください。</div>
     </div>
   </section>
@@ -480,6 +519,7 @@
 
   var tabDice = document.getElementById('tab-dice');
   var tabAmida = document.getElementById('tab-amida');
+  var tabRace = document.getElementById('tab-race');
   var tabCards = document.getElementById('tab-cards');
   var tabRoulette = document.getElementById('tab-roulette');
   var rouletteGameDiv = document.getElementById('roulette-game');
@@ -643,13 +683,16 @@
     rouletteGameDiv.hidden = game !== 'roulette';
     tabCards.classList.toggle('active', game === 'cards');
     document.getElementById('cards-game').hidden = game !== 'cards';
-    document.querySelector('.wrap').classList.toggle('wide', game === 'amida');
+    tabRace.classList.toggle('active', game === 'race');
+    document.getElementById('race-game').hidden = game !== 'race';
+    document.querySelector('.wrap').classList.toggle('wide', game === 'amida' || game === 'race');
     roomGameNameEl.textContent = GAME_LABELS[game] || '';
 
     renderDice();
     renderAmida();
     renderRoulette();
     renderCards();
+    renderRace();
     applyHostGating();
   }
 
@@ -673,7 +716,7 @@
       ? '👑 あなたが部屋主です（ゲームの切り替え・開始・発表などはあなただけが操作できます）'
       : '👑 部屋主: ' + hostName + '（ゲームの切り替え・開始・発表などは部屋主だけが操作できます）';
     if (isHost) return;
-    [document.getElementById('cards-setup-btn'), document.getElementById('cards-reveal-btn'), document.getElementById('cards-cancel-btn'), document.getElementById('cards-again-btn'), nextRoundBtn, amidaBeginBtn, amidaRevealBtn, amidaCancelBtn, amidaAgainBtn, rouletteSpinBtn, rouletteClearBtn].forEach(function (b) { b.hidden = true; });
+    [document.getElementById('race-start-btn'), document.getElementById('race-again-btn'), document.getElementById('cards-setup-btn'), document.getElementById('cards-reveal-btn'), document.getElementById('cards-cancel-btn'), document.getElementById('cards-again-btn'), nextRoundBtn, amidaBeginBtn, amidaRevealBtn, amidaCancelBtn, amidaAgainBtn, rouletteSpinBtn, rouletteClearBtn].forEach(function (b) { b.hidden = true; });
     rouletteExcludeCb.disabled = true;
     if (!latestData.amida) {
       amidaSetupDiv.hidden = false;
@@ -1420,11 +1463,194 @@
     if (isConnected) socket.emit('amida_reset');
   });
 
-  [['dice', tabDice], ['amida', tabAmida], ['roulette', tabRoulette], ['cards', tabCards]].forEach(function (pair) {
+  [['dice', tabDice], ['amida', tabAmida], ['roulette', tabRoulette], ['cards', tabCards], ['race', tabRace]].forEach(function (pair) {
     pair[1].addEventListener('click', function () {
       if (isConnected) socket.emit('switch_game', { game: pair[0] });
     });
   });
+
+  var RACE_COLORS = ['#c1440e', '#1d6fa5', '#8a5cb5', '#c2185b', '#2e8b57', '#b8860b', '#5c6bc0', '#00838f'];
+  var raceSetupDiv = document.getElementById('race-setup');
+  var raceBoard = document.getElementById('race-board');
+  var raceLanes = document.getElementById('race-lanes');
+  var raceCall = document.getElementById('race-call');
+  var raceStanding = document.getElementById('race-standing');
+  var raceResult = document.getElementById('race-result');
+  var raceAgainBtn = document.getElementById('race-again-btn');
+  var raceStartBtn = document.getElementById('race-start-btn');
+  var raceSession = null;
+  var raceSeen = null;
+  var raceAnim = false;
+  var raceRaf = null;
+  var raceTimers = [];
+
+  function raceStop() {
+    if (raceRaf) cancelAnimationFrame(raceRaf);
+    raceRaf = null;
+    raceTimers.forEach(clearTimeout);
+    raceTimers = [];
+    raceAnim = false;
+  }
+  function raceLater(fn, ms) { raceTimers.push(setTimeout(fn, ms)); }
+
+  function raceLanesHTML(r, ranks) {
+    return r.horses.map(function (hs, i) {
+      var me = hs.id === playerId;
+      var medal = ranks ? (ranks[i] === 1 ? '🥇 ' : ranks[i] === 2 ? '🥈 ' : ranks[i] === 3 ? '🥉 ' : ranks[i] + '位 ') : '';
+      return '<div class="race-lane' + (me ? ' me' : '') + '"><div class="race-name" style="color:' + RACE_COLORS[i % RACE_COLORS.length] + '">' + medal + escapeHtml(hs.name) + '</div>' +
+        '<div class="race-track"><div class="race-horse" data-i="' + i + '"><span>🐎</span></div><div class="race-goal"></div></div></div>';
+    }).join('');
+  }
+
+  function raceRanks(r) {
+    var ranks = new Array(r.horses.length);
+    r.order.forEach(function (idx, k) { ranks[idx] = k + 1; });
+    return ranks;
+  }
+
+  function raceResultHTML(r) {
+    var ranks = raceRanks(r);
+    return r.order.map(function (idx, k) {
+      var hs = r.horses[idx];
+      var me = hs.id === playerId;
+      var rk = k === 0 ? '🥇' : k === 1 ? '🥈' : k === 2 ? '🥉' : (k + 1) + '位';
+      return '<div class="row' + (me ? ' me' : '') + (k === 0 ? ' first' : '') + '"><span class="rk">' + rk + '</span><span>' + escapeHtml(hs.name) + (me ? '（あなた）' : '') + '</span></div>';
+    }).join('');
+  }
+
+  function raceInterp(r, s) {
+    var S = r.pos.length;
+    var a = Math.max(0, Math.min(S - 1, Math.floor(s)));
+    var b = Math.min(S - 1, a + 1);
+    var f = Math.max(0, Math.min(1, s - a));
+    return r.pos[a].map(function (v, i) { return v + (r.pos[b][i] - v) * f; });
+  }
+
+  function raceStatic(r) {
+    var ranks = raceRanks(r);
+    raceLanes.innerHTML = raceLanesHTML(r, ranks);
+    var last = r.pos[r.pos.length - 1];
+    Array.prototype.forEach.call(raceLanes.querySelectorAll('.race-horse'), function (el, i) {
+      el.style.setProperty('--p', String(last[i] / 1000));
+      if (ranks[i] === 1) el.classList.add('leader');
+    });
+    var w = r.horses[r.order[0]];
+    raceCall.className = 'race-call';
+    raceCall.textContent = '🏆 優勝は ' + w.name + ' さん！';
+    raceStanding.textContent = '';
+    raceResult.innerHTML = raceResultHTML(r);
+  }
+
+  function racePlay(r) {
+    raceAnim = true;
+    raceResult.innerHTML = '';
+    raceStanding.textContent = '';
+    raceAgainBtn.hidden = true;
+    raceLanes.innerHTML = raceLanesHTML(r, null);
+    var horses = Array.prototype.slice.call(raceLanes.querySelectorAll('.race-horse'));
+    var n = horses.length;
+    var S = r.pos.length;
+
+    // 3, 2, 1, GO!
+    ['3', '2', '1'].forEach(function (t, k) {
+      raceLater(function () { raceCall.className = 'race-call count'; raceCall.textContent = t; playAmidaTones([440], 0.12); }, k * 900);
+    });
+    raceLater(function () { raceCall.className = 'race-call count'; raceCall.textContent = 'GO!'; playAmidaTones([880, 1175], 0.12); }, 2700);
+
+    raceLater(function () {
+      raceCall.className = 'race-call';
+      raceCall.textContent = '🏇 スタート！';
+      horses.forEach(function (el) { el.classList.add('running'); });
+      var s = 0;
+      var last = performance.now();
+      var leader = -1;
+      var lastCallAt = 0;
+      var winnerDone = false;
+      var lastHoof = 0;
+
+      function frame(now) {
+        var dt = now - last;
+        last = now;
+        var cur = raceInterp(r, s);
+        var lead = 0;
+        for (var i = 1; i < n; i++) if (cur[i] > cur[lead]) lead = i;
+        // slow-motion over the last 20% until the leader crosses the line
+        var rate = cur[lead] >= 800 && cur[lead] < 1000 ? 0.5 : 1;
+        s = Math.min(S - 1, s + (dt / r.stepMs) * rate);
+        cur = raceInterp(r, s);
+        lead = 0;
+        for (var j = 1; j < n; j++) if (cur[j] > cur[lead]) lead = j;
+
+        for (var k = 0; k < n; k++) {
+          horses[k].style.setProperty('--p', String(cur[k] / 1000));
+          horses[k].classList.toggle('leader', k === lead && cur[lead] < 1000);
+        }
+
+        if (now - lastHoof > 260) { lastHoof = now; playAmidaTones([95 + Math.random() * 20], 0.05); }
+
+        if (lead !== leader && cur[lead] > 40 && !winnerDone) {
+          if (leader !== -1 && now - lastCallAt > 900) {
+            lastCallAt = now;
+            raceCall.textContent = '🔥 ' + r.horses[lead].name + ' が先頭に立った！';
+            playAmidaTones([660, 880], 0.07);
+          }
+          leader = lead;
+        } else if (cur[lead] >= 800 && cur[lead] < 1000 && now - lastCallAt > 2000) {
+          lastCallAt = now;
+          raceCall.textContent = 'ラスト直線！ ' + r.horses[lead].name + ' が先頭！';
+        }
+
+        if (!winnerDone && cur[lead] >= 1000) {
+          winnerDone = true;
+          var win = r.horses[r.order[0]];
+          raceCall.textContent = '🏆 ゴール！ ' + win.name + ' さんが優勝！';
+          playFanfare(); flashScreen(); launchConfetti(4600);
+          amidaBanner.classList.add('big');
+          showAmidaBanner('🏆 ' + win.name + ' 優勝！');
+          raceLater(function () { amidaBanner.classList.remove('big'); }, 3200);
+        }
+
+        var ranksNow = raceRanks(r);
+        var order = cur.map(function (v, i) { return [v, i]; }).sort(function (a, b) { return (b[0] - a[0]) || (ranksNow[a[1]] - ranksNow[b[1]]); });
+        raceStanding.textContent = order.slice(0, 3).map(function (o, k2) { return (k2 + 1) + '位 ' + r.horses[o[1]].name; }).join('　');
+
+        if (s >= S - 1) {
+          raceRaf = null;
+          raceLater(function () { raceAnim = false; renderRace(); }, 1500);
+          return;
+        }
+        raceRaf = requestAnimationFrame(frame);
+      }
+      raceRaf = requestAnimationFrame(frame);
+    }, 3400);
+  }
+
+  function renderRace() {
+    var r = latestData.race;
+    raceSetupDiv.hidden = !!r;
+    raceBoard.hidden = !r;
+    var specs = latestData.spectators || [];
+    if (!r) {
+      raceStop();
+      raceSession = null;
+      var count = (latestData.players || []).length - specs.length;
+      document.getElementById('race-count-note').textContent = count + '頭でレースをします';
+      raceStartBtn.disabled = count < 2;
+      if (latestData.hostId === playerId) document.getElementById('race-err').textContent = count < 2 ? '2人以上で遊べます。参加者を待ってください。' : '';
+      return;
+    }
+    if (r.id !== raceSession) { raceStop(); raceSession = r.id; raceSeen = null; }
+    if (raceSeen !== r.id && !raceAnim) {
+      raceSeen = r.id;
+      if (!r.done) { racePlay(r); return; }
+    }
+    if (raceAnim) return;
+    raceStatic(r);
+    raceAgainBtn.hidden = false;
+  }
+
+  raceStartBtn.addEventListener('click', function () { if (isConnected) socket.emit('race_start'); });
+  raceAgainBtn.addEventListener('click', function () { if (isConnected) socket.emit('race_reset'); });
 
   var cardsSetupDiv = document.getElementById('cards-setup');
   var cardsBoard = document.getElementById('cards-board');
@@ -1613,7 +1839,7 @@
   var chosenGame = localStorage.getItem('dice_game') || 'dice';
   var entryGamesEl = document.getElementById('entry-games');
   var roomGameNameEl = document.getElementById('room-game-name');
-  var GAME_LABELS = { dice: '🎲 ダイス対決', amida: '🪜 あみだくじ', roulette: '🎡 ルーレット', cards: '🃏 カードめくり' };
+  var GAME_LABELS = { dice: '🎲 ダイス対決', amida: '🪜 あみだくじ', roulette: '🎡 ルーレット', cards: '🃏 カードめくり', race: '🏇 競馬' };
   function paintEntryGames() {
     Array.prototype.forEach.call(entryGamesEl.children, function (b) {
       b.classList.toggle('active', b.getAttribute('data-game') === chosenGame);
