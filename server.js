@@ -29,7 +29,7 @@ function randomFace() {
 function createRoom() {
   let code;
   do { code = randomCode(); } while (rooms.has(code));
-  const room = { code, game: 'dice', round: 1, players: [], rolls: {}, activeIds: null, hostId: null, spectators: [], cards: null, race: null, amida: null, roulette: null, rouletteWon: [], rouletteExclude: true, updatedAt: Date.now() };
+  const room = { code, game: 'dice', round: 1, players: [], rolls: {}, activeIds: null, hostId: null, spectators: [], cards: null, race: null, racePicks: {}, amida: null, roulette: null, rouletteWon: [], rouletteExclude: true, updatedAt: Date.now() };
   rooms.set(code, room);
   return room;
 }
@@ -46,6 +46,21 @@ function hostOf(room) {
 // Players who actually take part (everyone except those set to spectate).
 function playersIn(room) {
   return room.players.filter((p) => !room.spectators.includes(p.id));
+}
+
+// Horses in gate order: players who picked a number get it, the rest fill the gaps at random.
+function seatHorses(room, ps) {
+  const n = ps.length;
+  const gates = new Array(n).fill(null);
+  const rest = [];
+  ps.forEach((p) => {
+    const s = room.racePicks[p.id];
+    if (Number.isInteger(s) && s >= 1 && s <= n && !gates[s - 1]) gates[s - 1] = { id: p.id, name: p.name };
+    else rest.push(p);
+  });
+  const spare = shuffle(rest);
+  for (let i = 0; i < n; i++) if (!gates[i]) { const p = spare.pop(); gates[i] = { id: p.id, name: p.name }; }
+  return gates;
 }
 
 function publicCards(c) {
@@ -153,6 +168,7 @@ function publicState(room) {
     amida: publicAmida(room.amida),
     cards: publicCards(room.cards),
     race: room.race,
+    racePicks: room.racePicks,
     roulette: room.roulette,
     rouletteWon: room.rouletteWon,
     rouletteExclude: room.rouletteExclude,
@@ -216,6 +232,7 @@ function removePlayer(code, pid) {
   room.players = room.players.filter((p) => p.id !== pid);
   if (room.activeIds) room.activeIds = room.activeIds.filter((id) => id !== pid);
   room.spectators = room.spectators.filter((id) => id !== pid);
+  delete room.racePicks[pid];
   if (room.cards && !room.cards.revealed) {
     const ci = room.cards.picks.indexOf(pid);
     if (ci !== -1) room.cards.picks[ci] = null;
@@ -580,6 +597,26 @@ io.on('connection', (socket) => {
     broadcast(joinedCode);
   });
 
+  // A player claims one gate number (null releases it). Numbers are 1..number of players.
+  socket.on('race_pick', ({ slot }) => {
+    if (!joinedCode) return;
+    const room = rooms.get(joinedCode);
+    if (!room || (room.race && !room.race.done)) return;
+    if (!playersIn(room).some((p) => p.id === playerId)) return;
+    if (slot === null || slot === undefined) {
+      delete room.racePicks[playerId];
+    } else {
+      const n = Math.min(30, playersIn(room).length);
+      slot = Number(slot);
+      if (!Number.isInteger(slot) || slot < 1 || slot > n) return;
+      const taken = Object.keys(room.racePicks).some((id) => id !== playerId && room.racePicks[id] === slot && playersIn(room).some((p) => p.id === id));
+      if (taken) return;
+      room.racePicks[playerId] = slot;
+    }
+    room.updatedAt = Date.now();
+    broadcast(joinedCode);
+  });
+
   socket.on('race_start', () => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
@@ -590,7 +627,7 @@ io.on('connection', (socket) => {
     const sim = simulateRace(ps.length);
     const race = {
       id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-      horses: ps.map((p) => ({ id: p.id, name: p.name })),
+      horses: seatHorses(room, ps),
       stepMs: 100,
       pos: sim.frames,
       order: sim.order,
@@ -605,7 +642,7 @@ io.on('connection', (socket) => {
       if (!r || r.race !== race) return;
       race.done = true;
       broadcast(code);
-    }, race.pos.length * race.stepMs * 1.4 + 9000);
+    }, race.pos.length * race.stepMs * 1.4 + 30000);
   });
 
   socket.on('race_reset', () => {
@@ -627,6 +664,7 @@ io.on('connection', (socket) => {
     room.spectators = room.spectators.filter((id) => id !== pid);
     if (on) {
       room.spectators.push(pid);
+      delete room.racePicks[pid];
       if (room.cards && !room.cards.revealed) {
         const ci = room.cards.picks.indexOf(pid);
         if (ci !== -1) room.cards.picks[ci] = null;

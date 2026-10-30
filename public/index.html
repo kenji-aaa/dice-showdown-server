@@ -303,6 +303,27 @@
   .race-result.pop .row { animation: row-in 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
   @keyframes row-in { from { opacity: 0; transform: translateX(-40px) scale(0.9); } to { opacity: 1; transform: none; } }
   .race-map { display: none; }
+  .horse-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; margin: 0.4rem 0 0.4rem; }
+  .horse-pick { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px 6px; border-radius: 12px; border: 2px solid var(--border); background: var(--surface-2); color: var(--ink); cursor: pointer; font-family: inherit; }
+  .horse-pick canvas { width: 100%; max-width: 110px; height: auto; border-radius: 8px; background: linear-gradient(#d9efff 0 40%, #43a04a 40%); }
+  .horse-pick .hp-name { font-size: 12px; font-weight: 700; min-height: 1.3em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .horse-pick.free .hp-name { font-weight: 400; color: var(--ink-secondary); }
+  .horse-pick.mine { border-color: #ffb400; background: #fff3c4; box-shadow: 0 0 0 2px rgba(255,180,0,0.35); color: #6b4a00; }
+  .horse-pick.taken { opacity: 0.55; cursor: not-allowed; }
+  .horse-pick:disabled { cursor: default; }
+  /* while a race runs the page turns into a full-window stage */
+  body.race-immersive { overflow: hidden; }
+  body.race-immersive .wrap { max-width: none; margin: 0; padding: 0; }
+  body.race-immersive #room { border-radius: 0; border: 0; box-shadow: none; min-height: 100vh; }
+  body.race-immersive #room .header, body.race-immersive #host-note, body.race-immersive #member-list, body.race-immersive #room-tabs,
+  body.race-immersive #race-standing, body.race-immersive #race-result, body.race-immersive #room > .body > .footnote { display: none; }
+  body.race-immersive #room > .body { padding: 8px 12px; gap: 6px; }
+  body.race-immersive .race-call { margin: 0; font-size: 24px; min-height: 1.3em; }
+  body.race-immersive .race-call.count { font-size: 40px; }
+  body.race-immersive .race-lanes.stage { max-width: calc((100vh - 250px) * 1.92); margin: 0 auto; width: 100%; }
+  body.race-immersive .race-led { width: 100%; max-width: 720px; margin: 6px auto 0; padding: 8px 16px 6px; }
+  body.race-immersive .led-row { font-size: 26px; line-height: 1.35; }
+  body.race-immersive .led-head { margin-bottom: 4px; padding-bottom: 4px; font-size: 16px; }
   .race-led { position: relative; margin: 12px 0 4px; padding: 14px 20px 10px; background: #050505; border: 4px solid #2c2c2c; border-radius: 12px; overflow: hidden;
     font-family: "DotGothic16", "Zen Maru Gothic", monospace; color: #ffb52e; text-shadow: 0 0 4px rgba(255,170,40,0.7);
     box-shadow: inset 0 0 26px rgba(255,140,0,0.18), 0 6px 16px rgba(0,0,0,0.35); animation: led-in 0.5s ease-out; }
@@ -485,6 +506,8 @@
       <div id="race-game" hidden>
         <div id="race-setup">
           <div class="amida-hint big" id="race-count-note" style="margin-bottom:0.4rem;"></div>
+          <div class="horse-picks" id="horse-picks"></div>
+          <div class="footnote" id="horse-pick-note" style="margin: 0 0 0.6rem;"></div>
           <div class="footnote" style="margin: 0 0 0.8rem;">参加者が1頭ずつの馬になって競走します。誰が勝つかはスタートするまで誰にも分かりません。</div>
           <button class="primary" id="race-start-btn">🏇 レースを始める</button>
           <div class="err" id="race-err"></div>
@@ -1762,6 +1785,7 @@
     setTimeout(function () { d.remove(); }, 900);
   }
   function raceFxOff() {
+    raceImmersive(false);
     var el = raceFx;
     raceFx = null;
     if (raceCrowd) { raceCrowd.stop(false); raceCrowd = null; }
@@ -1777,6 +1801,20 @@
     }
   }
   var raceFreshReveal = false;
+  var raceEnteredFs = false;
+  // Full-window layout while the race runs; real browser fullscreen too when the browser allows it.
+  function raceImmersive(on) {
+    document.body.classList.toggle('race-immersive', on);
+    try {
+      if (on && !document.fullscreenElement && document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().then(function () { raceEnteredFs = true; }).catch(function () {});
+      } else if (!on && raceEnteredFs && document.fullscreenElement) {
+        document.exitFullscreen().catch(function () {});
+        raceEnteredFs = false;
+      }
+    } catch (e) {}
+    window.scrollTo(0, 0);
+  }
   var raceLedEl = document.getElementById('race-led');
   function raceLedRow(r, k) {
     var idx = r.order[k];
@@ -2108,6 +2146,7 @@
     raceStanding.textContent = '';
     raceAgainBtn.hidden = true;
     raceLedEl.hidden = true;
+    raceImmersive(true);
     raceLanes.innerHTML = raceLanesHTML();
     raceCanvasInit();
     var n = r.horses.length;
@@ -2298,6 +2337,48 @@
     }, tGo);
   }
 
+  // ---- choose your horse (gate number) before the start ----
+  function raceRenderPicks(count) {
+    var box = document.getElementById('horse-picks');
+    var note = document.getElementById('horse-pick-note');
+    var picks = latestData.racePicks || {};
+    var specs = latestData.spectators || [];
+    var players = latestData.players || [];
+    var nameOf = {};
+    players.forEach(function (p) { nameOf[p.id] = p.name; });
+    var iAmPlayer = players.some(function (p) { return p.id === playerId; }) && specs.indexOf(playerId) === -1;
+    var owner = {};
+    Object.keys(picks).forEach(function (id) {
+      if (nameOf[id] && specs.indexOf(id) === -1 && picks[id] >= 1 && picks[id] <= count) owner[picks[id]] = id;
+    });
+    var html = '';
+    for (var s = 1; s <= count; s++) {
+      var oid = owner[s];
+      var cls = 'horse-pick' + (oid === playerId ? ' mine' : oid ? ' taken' : ' free');
+      html += '<button type="button" class="' + cls + '" data-slot="' + s + '"' + (!iAmPlayer || (oid && oid !== playerId) ? ' disabled' : '') + '>' +
+        '<canvas width="132" height="84"></canvas><span class="hp-name">' + (oid ? escapeHtml(nameOf[oid]) + (oid === playerId ? '（あなた）' : '') : '空き') + '</span></button>';
+    }
+    box.innerHTML = html;
+    Array.prototype.forEach.call(box.querySelectorAll('canvas'), function (cv, i) {
+      var c = cv.getContext('2d');
+      c.fillStyle = '#d9efff'; c.fillRect(0, 0, 132, 34);
+      c.fillStyle = '#43a04a'; c.fillRect(0, 34, 132, 50);
+      raceDrawHorse(c, 74, 74, 1.3, 0, i + 1, RACE_COATS[i % 5], RACE_COLORS[i % RACE_COLORS.length], i >= 8, false, false);
+      c.fillStyle = RACE_COLORS[i % RACE_COLORS.length];
+      c.beginPath(); c.arc(16, 16, 11, 0, 6.3); c.fill();
+      c.fillStyle = '#fff'; c.font = 'bold 14px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(String(i + 1), 16, 16.5);
+    });
+    note.textContent = iAmPlayer ? '好きな馬をタップして選べます（もう一度タップで解除）。選ばなかった人は、余った馬にランダムで割り当てます。どの馬が勝つかは運です。' : '';
+  }
+  document.getElementById('horse-picks').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.horse-pick') : null;
+    if (!b || b.disabled || !isConnected) return;
+    var slot = Number(b.getAttribute('data-slot'));
+    var mine = (latestData.racePicks || {})[playerId];
+    socket.emit('race_pick', { slot: mine === slot ? null : slot });
+  });
+
   function renderRace() {
     raceSndLoad();
     var r = latestData.race;
@@ -2310,6 +2391,7 @@
       raceSession = null;
       var count = (latestData.players || []).length - specs.length;
       document.getElementById('race-count-note').textContent = count + '頭でレースをします';
+      raceRenderPicks(count);
       raceStartBtn.disabled = count < 2;
       if (latestData.hostId === playerId) document.getElementById('race-err').textContent = count < 2 ? '2人以上で遊べます。参加者を待ってください。' : '';
       return;
