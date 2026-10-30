@@ -271,6 +271,14 @@
   @keyframes card-shake { 0%,100% { transform: translateX(0) rotate(0); } 25% { transform: translateX(-3px) rotate(-3deg); } 75% { transform: translateX(3px) rotate(3deg); } }
   .race-call { text-align: center; font-family: "Zen Maru Gothic", sans-serif; font-weight: 700; font-size: 20px; min-height: 1.6em; margin: 0.2rem 0 0.6rem; color: var(--accent); }
   .race-call.count { font-size: 56px; }
+  .race-call.count.small { font-size: 34px; }
+  .race-map { margin: 0 0 8px; }
+  .race-map .txt { text-align: center; font-size: 14px; font-weight: 700; color: var(--ink-secondary); margin-bottom: 4px; }
+  .race-map .txt b { font-family: "Zen Maru Gothic", sans-serif; font-size: 22px; color: var(--accent); }
+  .race-map .bar { position: relative; height: 22px; margin-left: 104px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--border); }
+  .race-map .bar .fin { position: absolute; right: 4px; top: 0; line-height: 20px; font-size: 14px; }
+  .race-map .dot { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.25); }
+  .race-map .dot.lead { width: 16px; height: 16px; margin: -8px 0 0 -8px; z-index: 2; }
   .race-lanes { display: flex; flex-direction: column; gap: 4px; padding: 10px 0; background: linear-gradient(180deg, color-mix(in srgb, var(--felt) 10%, transparent), transparent); border-radius: 12px; }
   .race-lane { display: flex; align-items: center; gap: 8px; }
   .race-name { width: 96px; flex-shrink: 0; text-align: right; font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 6px; }
@@ -442,6 +450,7 @@
         </div>
         <div id="race-board" hidden>
           <div class="race-call" id="race-call"></div>
+          <div class="race-map" id="race-map"></div>
           <div class="race-lanes" id="race-lanes"></div>
           <div class="race-standing" id="race-standing"></div>
           <div class="race-result" id="race-result"></div>
@@ -857,6 +866,62 @@
       osc.start(start);
       osc.stop(start + step + 0.1);
     });
+  }
+  // Synthesized bugle-style fanfare (saw wave through a low-pass) and a starter's pistol.
+  function playBrassFanfare() {
+    var ctx = getAmidaAudioCtx();
+    if (!ctx) return;
+    var t0 = ctx.currentTime + 0.05;
+    var seq = [
+      [392, 0, 0.16], [392, 0.22, 0.16], [392, 0.44, 0.16], [523.25, 0.66, 0.55],
+      [523.25, 1.35, 0.16], [523.25, 1.57, 0.16], [523.25, 1.79, 0.16], [659.25, 2.01, 0.55],
+      [392, 2.7, 0.16], [523.25, 2.92, 0.16], [659.25, 3.14, 0.16],
+      [523.25, 3.4, 0.9], [659.25, 3.4, 0.9], [783.99, 3.4, 0.9]
+    ];
+    seq.forEach(function (n) {
+      var osc = ctx.createOscillator();
+      var lp = ctx.createBiquadFilter();
+      var gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.value = n[0];
+      lp.type = 'lowpass';
+      lp.frequency.value = 1800;
+      var st = t0 + n[1];
+      gain.gain.setValueAtTime(0.0001, st);
+      gain.gain.exponentialRampToValueAtTime(0.16, st + 0.04);
+      gain.gain.setValueAtTime(0.16, st + n[2] - 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, st + n[2] + 0.1);
+      osc.connect(lp).connect(gain).connect(ctx.destination);
+      osc.start(st);
+      osc.stop(st + n[2] + 0.15);
+    });
+  }
+  function playPistol() {
+    var ctx = getAmidaAudioCtx();
+    if (!ctx) return;
+    var t0 = ctx.currentTime;
+    var len = Math.floor(ctx.sampleRate * 0.35);
+    var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 4);
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    var hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 700;
+    var g = ctx.createGain();
+    g.gain.value = 0.9;
+    src.connect(hp).connect(g).connect(ctx.destination);
+    src.start(t0);
+    var o = ctx.createOscillator();
+    var og = ctx.createGain();
+    o.frequency.setValueAtTime(220, t0);
+    o.frequency.exponentialRampToValueAtTime(45, t0 + 0.18);
+    og.gain.setValueAtTime(0.7, t0);
+    og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+    o.connect(og).connect(ctx.destination);
+    o.start(t0);
+    o.stop(t0 + 0.25);
   }
   function playAtariChime() { playAmidaTones([523.25, 659.25, 783.99, 1046.5], 0.14); }
   function playHazureBlip() { playAmidaTones([349.23, 293.66], 0.12); }
@@ -1514,10 +1579,32 @@
   }
   function raceCam(world, leaderFrac, cam, snap) {
     var leaderX = leaderFrac * (world.W - 34);
-    var target = Math.max(0, Math.min(world.W - world.viewW, leaderX - world.viewW * 0.62));
+    var q = Math.max(0, Math.min(1, (leaderFrac - 0.6) / 0.3));
+    var off = 0.62 - 0.32 * q * q * (3 - 2 * q);
+    var target = Math.max(0, Math.min(world.W - world.viewW, leaderX - world.viewW * off));
     var next = snap ? target : cam + (target - cam) * 0.14;
     raceLanes.style.setProperty('--cam', String(next));
     return next;
+  }
+
+  var RACE_METERS = 1600;
+  function raceMapBuild(r) {
+    var m = document.getElementById('race-map');
+    m.innerHTML = '<div class="txt" id="race-remain"></div><div class="bar" id="race-bar"><span class="fin">🏁</span>' +
+      r.horses.map(function (hs, i) { return '<span class="dot" style="background:' + RACE_COLORS[i % RACE_COLORS.length] + '"></span>'; }).join('') + '</div>';
+    return Array.prototype.slice.call(m.querySelectorAll('.dot'));
+  }
+  function raceMapUpdate(dots, cur, lead) {
+    var bar = document.getElementById('race-bar');
+    var bw = bar ? bar.clientWidth - 24 : 0;
+    dots.forEach(function (el, i) {
+      el.style.left = (12 + (cur[i] / 1000) * bw) + 'px';
+      el.classList.toggle('lead', i === lead);
+    });
+    var rem = Math.max(0, Math.ceil((1000 - cur[lead]) * RACE_METERS / 1000 / 10) * 10);
+    var t = document.getElementById('race-remain');
+    if (t) t.innerHTML = rem > 0 ? '🏁 ゴールまで 残り <b>' + rem + '</b> m' : '🏁 ゴール！';
+    return rem;
   }
 
   function raceRanks(r) {
@@ -1550,6 +1637,8 @@
     var wld = raceSetWorld();
     raceCam(wld, 1, 0, true);
     var last = r.pos[r.pos.length - 1];
+    var sdots = raceMapBuild(r);
+    raceMapUpdate(sdots, last, r.order[0]);
     Array.prototype.forEach.call(raceLanes.querySelectorAll('.race-horse'), function (el, i) {
       el.style.setProperty('--p', String(last[i] / 1000));
       if (ranks[i] === 1) el.classList.add('leader');
@@ -1573,15 +1662,22 @@
     var world = raceSetWorld();
     var cam = 0;
 
-    // 3, 2, 1, GO!
-    ['3', '2', '1'].forEach(function (t, k) {
-      raceLater(function () { raceCall.className = 'race-call count'; raceCall.textContent = t; playAmidaTones([440], 0.12); }, k * 900);
-    });
-    raceLater(function () { raceCall.className = 'race-call count'; raceCall.textContent = 'GO!'; playAmidaTones([880, 1175], 0.12); }, 2700);
+    var dots = raceMapBuild(r);
+    raceMapUpdate(dots, r.pos[0], 0);
+    // fanfare -> 位置について -> よーい -> pistol
+    raceCall.className = 'race-call count small';
+    raceCall.textContent = '🎺 まもなく発走！';
+    playBrassFanfare();
+    raceLater(function () { raceCall.textContent = '位置について…'; playAmidaTones([196], 0.2); }, 4600);
+    raceLater(function () { raceCall.textContent = 'よーい…'; playAmidaTones([261.63], 0.2); }, 5800);
 
     raceLater(function () {
-      raceCall.className = 'race-call';
-      raceCall.textContent = '🏇 スタート！';
+      playPistol(); flashScreen();
+      raceCall.className = 'race-call count small';
+      raceCall.textContent = '🔫 スタート！';
+      raceLater(function () { raceCall.className = 'race-call'; }, 900);
+      var nextMs = 0;
+      var MILES = [1000, 500, 300, 200, 100];
       horses.forEach(function (el) { el.classList.add('running'); });
       var s = 0;
       var last = performance.now();
@@ -1613,6 +1709,14 @@
           horses[k].classList.toggle('leader', k === lead && cur[lead] < 1000);
         }
 
+        var remNow = raceMapUpdate(dots, cur, lead);
+        if (!winnerDone && nextMs < MILES.length && remNow <= MILES[nextMs] && remNow > 0) {
+          raceCall.textContent = '🏁 ゴールまで あと ' + MILES[nextMs] + 'm！';
+          playAmidaTones([880], 0.1);
+          lastCallAt = now;
+          nextMs++;
+        }
+
         if (now - lastHoof > 260) { lastHoof = now; playAmidaTones([95 + Math.random() * 20], 0.05); }
 
         if (lead !== leader && cur[lead] > 40 && !winnerDone) {
@@ -1622,9 +1726,6 @@
             playAmidaTones([660, 880], 0.07);
           }
           leader = lead;
-        } else if (cur[lead] >= 800 && cur[lead] < 1000 && now - lastCallAt > 2000) {
-          lastCallAt = now;
-          raceCall.textContent = 'ラスト直線！ ' + r.horses[lead].name + ' が先頭！';
         }
 
         if (!winnerDone && cur[lead] >= 1000) {
@@ -1649,7 +1750,7 @@
         raceRaf = requestAnimationFrame(frame);
       }
       raceRaf = requestAnimationFrame(frame);
-    }, 3400);
+    }, 7000);
   }
 
   function renderRace() {
