@@ -2658,6 +2658,11 @@
     socket.emit('create_room', { name: name, pid: playerId, game: chosenGame, reqId: pendingCreateReq });
   });
 
+  // Once all 4 characters of the room code are in, move to the join button so Enter joins.
+  codeInput.addEventListener('input', function (e) {
+    if (codeInput.value.trim().length === 4 && !(e.inputType || '').startsWith('delete')) joinBtn.focus();
+  });
+
   joinBtn.addEventListener('click', function () {
     var name = nameInput.value.trim();
     var code = codeInput.value.trim().toUpperCase();
