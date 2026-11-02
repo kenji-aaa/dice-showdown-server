@@ -303,6 +303,10 @@
   .race-result.pop .row { animation: row-in 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
   @keyframes row-in { from { opacity: 0; transform: translateX(-40px) scale(0.9); } to { opacity: 1; transform: none; } }
   .race-map { display: none; }
+  .vol { position: fixed; right: 12px; bottom: 12px; z-index: 70; display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 6px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); opacity: 0.8; transition: opacity 0.2s; }
+  .vol:hover, .vol:focus-within { opacity: 1; }
+  .vol button { background: none; border: 0; padding: 2px 4px; font-size: 18px; line-height: 1; cursor: pointer; }
+  .vol input[type="range"] { width: 90px; accent-color: var(--felt); cursor: pointer; }
   .horse-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; margin: 0.4rem 0 0.4rem; }
   .horse-pick { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px 6px; border-radius: 12px; border: 2px solid var(--border); background: var(--surface-2); color: var(--ink); cursor: pointer; font-family: inherit; }
   .horse-pick canvas { width: 100%; max-width: 110px; height: auto; border-radius: 8px; background: linear-gradient(#d9efff 0 40%, #43a04a 40%); }
@@ -530,6 +534,10 @@
   </section>
 </div>
 
+<div class="vol" id="vol">
+  <button type="button" id="vol-btn" aria-label="ミュート切り替え">🔊</button>
+  <input type="range" id="vol-range" min="0" max="100" step="1" aria-label="音量">
+</div>
 <script src="/socket.io/socket.io.js"></script>
 <script>
 (function () {
@@ -905,12 +913,39 @@
   function svgEl(tag) { return document.createElementNS('http://www.w3.org/2000/svg', tag); }
 
   var amidaAudioCtx = null;
+  var amidaMaster = null;
+  var MASTER_VOLUME = 0.55; // overall loudness of every sound in the app (slider at the bottom right)
+  var volRange = document.getElementById('vol-range');
+  var volBtn = document.getElementById('vol-btn');
+  var volBeforeMute = 55;
+  try {
+    var savedVol = localStorage.getItem('dice_vol');
+    if (savedVol !== null && !isNaN(Number(savedVol))) MASTER_VOLUME = Math.max(0, Math.min(1, Number(savedVol) / 100));
+  } catch (e) {}
+  function applyVolume(v, save) {
+    MASTER_VOLUME = Math.max(0, Math.min(1, v / 100));
+    if (amidaMaster) amidaMaster.gain.value = MASTER_VOLUME;
+    volRange.value = String(Math.round(MASTER_VOLUME * 100));
+    volBtn.textContent = MASTER_VOLUME === 0 ? '🔇' : MASTER_VOLUME < 0.4 ? '🔈' : '🔊';
+    if (save) { try { localStorage.setItem('dice_vol', String(Math.round(MASTER_VOLUME * 100))); } catch (e) {} }
+  }
+  volRange.addEventListener('input', function () { applyVolume(Number(volRange.value), true); });
+  volRange.addEventListener('change', function () { playAmidaTones([660], 0.08); });
+  volBtn.addEventListener('click', function () {
+    if (MASTER_VOLUME > 0) { volBeforeMute = Math.round(MASTER_VOLUME * 100); applyVolume(0, true); }
+    else { applyVolume(volBeforeMute || 55, true); playAmidaTones([660], 0.08); }
+  });
+  applyVolume(MASTER_VOLUME * 100, false);
   function getAmidaAudioCtx() {
     if (amidaAudioCtx) return amidaAudioCtx;
     try {
       amidaAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      amidaMaster = amidaAudioCtx.createGain();
+      amidaMaster.gain.value = MASTER_VOLUME;
+      amidaMaster.connect(amidaAudioCtx.destination);
     } catch (e) {
       amidaAudioCtx = null;
+      amidaMaster = null;
     }
     return amidaAudioCtx;
   }
@@ -927,7 +962,7 @@
       gain.gain.setValueAtTime(0.0001, start);
       gain.gain.exponentialRampToValueAtTime(0.22, start + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.0001, start + step + 0.08);
-      osc.connect(gain).connect(ctx.destination);
+      osc.connect(gain).connect(amidaMaster);
       osc.start(start);
       osc.stop(start + step + 0.1);
     });
@@ -956,7 +991,7 @@
       gain.gain.exponentialRampToValueAtTime(0.16, st + 0.04);
       gain.gain.setValueAtTime(0.16, st + n[2] - 0.04);
       gain.gain.exponentialRampToValueAtTime(0.0001, st + n[2] + 0.1);
-      osc.connect(lp).connect(gain).connect(ctx.destination);
+      osc.connect(lp).connect(gain).connect(amidaMaster);
       osc.start(st);
       osc.stop(st + n[2] + 0.15);
     });
@@ -976,7 +1011,7 @@
     hp.frequency.value = 700;
     var g = ctx.createGain();
     g.gain.value = 0.9;
-    src.connect(hp).connect(g).connect(ctx.destination);
+    src.connect(hp).connect(g).connect(amidaMaster);
     src.start(t0);
     var o = ctx.createOscillator();
     var og = ctx.createGain();
@@ -984,7 +1019,7 @@
     o.frequency.exponentialRampToValueAtTime(45, t0 + 0.18);
     og.gain.setValueAtTime(0.7, t0);
     og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
-    o.connect(og).connect(ctx.destination);
+    o.connect(og).connect(amidaMaster);
     o.start(t0);
     o.stop(t0 + 0.25);
   }
@@ -998,7 +1033,7 @@
     o.frequency.exponentialRampToValueAtTime(40, t0 + 0.14);
     g.gain.setValueAtTime(vol || 0.5, t0);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
-    o.connect(g).connect(ctx.destination);
+    o.connect(g).connect(amidaMaster);
     o.start(t0);
     o.stop(t0 + 0.22);
   }
@@ -1017,7 +1052,7 @@
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.exponentialRampToValueAtTime(0.14, t0 + sec * 0.9);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + sec + 0.08);
-    o.connect(lp).connect(g).connect(ctx.destination);
+    o.connect(lp).connect(g).connect(amidaMaster);
     o.start(t0);
     o.stop(t0 + sec + 0.1);
   }
@@ -1036,7 +1071,7 @@
     hp.frequency.value = 5000;
     var g = ctx.createGain();
     g.gain.value = 0.5;
-    src.connect(hp).connect(g).connect(ctx.destination);
+    src.connect(hp).connect(g).connect(amidaMaster);
     src.start(t0);
   }
   // Recorded sounds in public/sounds/. Anything that fails to load falls back to the synthesized version.
@@ -1074,7 +1109,7 @@
     src.loop = !!loop;
     var g = ctx.createGain();
     g.gain.value = vol;
-    src.connect(g).connect(ctx.destination);
+    src.connect(g).connect(amidaMaster);
     src.start();
     return {
       dur: buf.duration, gain: g, src: src,
@@ -1113,7 +1148,7 @@
     bp.Q.value = 0.6;
     var g = ctx.createGain();
     g.gain.value = 0.0001;
-    src.connect(bp).connect(g).connect(ctx.destination);
+    src.connect(bp).connect(g).connect(amidaMaster);
     src.start();
     return {
       level: function (x) { g.gain.setTargetAtTime(0.02 + 0.13 * x, ctx.currentTime, 0.25); },
